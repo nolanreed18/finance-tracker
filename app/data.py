@@ -53,7 +53,10 @@ def today() -> date:
 # Changes to tables that already existed on the live database, each safe to
 # run again (schema.sql only creates what's missing). _connection() runs them
 # after schema.sql. Add one whenever an existing table changes.
-MIGRATIONS: list[str] = []
+MIGRATIONS: list[str] = [
+    # 2026-10: what the bank feed called a transaction, for the categoriser.
+    "alter table transactions add column if not exists source_category text",
+]
 
 
 def _connection() -> psycopg.Connection:
@@ -285,7 +288,7 @@ def archive_category(category_id: int, archived: bool = True) -> None:
 # ---- transactions -----------------------------------------------------------
 
 TRANSACTION_FIELDS = {"account_id", "happened_on", "amount", "kind", "category_id", "payee",
-                      "notes"}
+                      "notes", "source_category"}
 
 _TRANSACTIONS = """
     select t.*, a.name as account, c.name as category
@@ -575,6 +578,118 @@ def update_goal(goal_id: int, **fields) -> None:
 
 def delete_goal(goal_id: int) -> None:
     _delete("goals", "goal_id", goal_id)
+
+
+# ---- bank connections (Plaid) -----------------------------------------------
+
+CONNECTION_FIELDS = {"institution_name", "cursor", "last_synced_on", "last_error"}
+CONNECTED_ACCOUNT_FIELDS = {"account_id", "name", "mask", "kind", "subtype"}
+
+
+def connections() -> pd.DataFrame:
+    """Every linked bank, oldest first, with how many of its accounts are
+    matched to ours. The access token is left out: pages never need it."""
+    return _read("""
+        select c.connection_id, c.provider, c.item_id, c.institution_name, c.linked_on,
+               c.last_synced_on, c.last_error,
+               count(a.connected_account_id) as accounts,
+               count(a.account_id) as matched
+        from connections c left join connected_accounts a using (connection_id)
+        group by c.connection_id
+        order by c.connection_id
+    """)
+
+
+def connection(connection_id: int) -> dict | None:
+    """One connection, access token included: for the sync and the link flow."""
+    return _one("select * from connections where connection_id = %s", (connection_id,))
+
+
+def add_connection(item_id: str, access_token: str, on: date,
+                   institution_name: str | None = None) -> int:
+    return _insert("connections", "connection_id", {
+        "item_id": item_id, "access_token": access_token, "linked_on": on,
+        "institution_name": institution_name})
+
+
+def update_connection(connection_id: int, **fields) -> None:
+    _update("connections", "connection_id", connection_id, fields, CONNECTION_FIELDS)
+
+
+def delete_connection(connection_id: int) -> None:
+    """Forget a bank: its connected_accounts go too; our accounts and their
+    transactions stay."""
+    _delete("connections", "connection_id", connection_id)
+
+
+def connected_accounts(connection_id: int | None = None) -> pd.DataFrame:
+    """The bank's accounts, with the name of ours each is matched to."""
+    where = "" if connection_id is None else "where ca.connection_id = %(id)s"
+    return _read(f"""
+        select ca.*, a.name as account, a.is_liability
+        from connected_accounts ca left join accounts a using (account_id)
+        {where}
+        order by ca.connection_id, lower(ca.name)
+    """, {"id": connection_id})
+
+
+def save_connected_accounts(connection_id: int, found: list[dict]) -> None:
+    """The accounts a bank reports (provider_account_id, name, mask, kind,
+    subtype): new ones added, known ones renamed, matches kept."""
+    with _transaction() as cur:
+        for acct in found:
+            cur.execute("""
+                insert into connected_accounts
+                    (connection_id, provider_account_id, name, mask, kind, subtype)
+                values (%(connection_id)s, %(provider_account_id)s, %(name)s, %(mask)s,
+                        %(kind)s, %(subtype)s)
+                on conflict (provider_account_id) do update
+                    set name = excluded.name, mask = excluded.mask, kind = excluded.kind,
+                        subtype = excluded.subtype
+            """, {"connection_id": connection_id, **{k: _clean(acct.get(k)) for k in
+                  ("provider_account_id", "name", "mask", "kind", "subtype")}})
+
+
+def match_connected_account(connected_account_id: int, account_id: int | None) -> None:
+    """Which of our accounts a bank account feeds (None: don't sync it)."""
+    _update("connected_accounts", "connected_account_id", connected_account_id,
+            {"account_id": account_id}, CONNECTED_ACCOUNT_FIELDS)
+
+
+def apply_sync(rows: list[dict], modified: list[dict], removed: list[str], on: date
+               ) -> dict[str, int]:
+    """One connection's changes from logic.plaid_rows, all or nothing:
+    added rows are inserted unless their key (or the same row's file-import
+    key) is already there, modified rows are updated by key, removed rows
+    deleted by key. Counts of each."""
+    counts = {"added": 0, "skipped": 0, "modified": 0, "removed": 0}
+    with _transaction() as cur:
+        for row in rows:
+            cur.execute("select 1 from transactions where import_key in (%s, %s)",
+                        (row["import_key"], row.get("file_key")))
+            if cur.fetchone():
+                counts["skipped"] += 1
+                continue
+            fields = {k: _clean(v) for k, v in row.items() if k != "file_key"}
+            columns = [*fields, "created_on"]
+            cur.execute(sql.SQL("insert into transactions ({}) values ({})").format(
+                sql.SQL(", ").join(map(sql.Identifier, columns)),
+                sql.SQL(", ").join(map(sql.Placeholder, columns))),
+                {**fields, "created_on": on})
+            counts["added"] += 1
+        for row in modified:
+            cur.execute("""
+                update transactions
+                set happened_on = %(happened_on)s, amount = %(amount)s, kind = %(kind)s,
+                    payee = %(payee)s, source_category = %(source_category)s
+                where import_key = %(import_key)s
+            """, {k: _clean(row.get(k)) for k in
+                  ("happened_on", "amount", "kind", "payee", "source_category", "import_key")})
+            counts["modified"] += cur.rowcount
+        for key in removed:
+            cur.execute("delete from transactions where import_key = %s", (key,))
+            counts["removed"] += cur.rowcount
+    return counts
 
 
 # ---- settings ---------------------------------------------------------------

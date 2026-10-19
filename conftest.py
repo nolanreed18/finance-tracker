@@ -23,7 +23,7 @@ import data  # noqa: E402
 import db  # noqa: E402
 
 TABLES = ("accounts, categories, transactions, budgets, bills, balances, goals, "
-          "settings")
+          "connections, connected_accounts, settings")
 
 
 @pytest.fixture(autouse=True)

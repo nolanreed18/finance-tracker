@@ -711,3 +711,63 @@ def map_import(frame: pd.DataFrame, account_id: int, categories: dict[str, int] 
         problems.append(f"Categories not in your list were left blank: {shown}"
                         + ("…" if len(unknown_categories) > 5 else "."))
     return rows, problems
+
+
+# ---- bank feed (Plaid) ------------------------------------------------------
+
+# Plaid's categories that mean money moved between accounts, not earned or
+# spent: paying a card from checking, moving money to savings.
+TRANSFER_CATEGORIES = ("TRANSFER_IN", "TRANSFER_OUT", "LOAN_PAYMENTS")
+
+
+def plaid_key(transaction_id: str) -> str:
+    return f"plaid:{transaction_id}"
+
+
+def plaid_kind(amount: Decimal, is_liability: bool, category: str | None, name) -> str:
+    """What a bank-feed row is: Plaid's own category decides transfers;
+    otherwise the sign rule of a typed or imported row (import_kind)."""
+    if category and category.upper() in TRANSFER_CATEGORIES:
+        return "transfer"
+    return import_kind(amount, is_liability, name, category)
+
+
+def plaid_rows(transactions: list[dict], accounts: dict[str, tuple[int, bool]]
+               ) -> tuple[list[dict], list[str]]:
+    """Rows for data.apply_sync from Plaid transactions. `accounts` maps
+    Plaid's account_id to (our account_id, is_liability); transactions on
+    unmatched accounts, and pending ones, are left out. Plaid's amount is
+    positive for money out, so it's negated. Each row also carries the key
+    a file import of the same row would have (file_key), so a bank row never
+    duplicates one brought in by hand. Returns (rows, skipped ids)."""
+    rows, skipped = [], []
+    for tx in transactions:
+        match = accounts.get(tx.get("account_id"))
+        if match is None or tx.get("pending"):
+            skipped.append(tx.get("transaction_id"))
+            continue
+        account_id, is_liability = match
+        amount = -(to_money(tx["amount"]) or Decimal("0"))
+        happened_on = date.fromisoformat(str(tx["date"]))
+        category = (tx.get("personal_finance_category") or {}).get("primary")
+        name = value(tx.get("merchant_name")) or value(tx.get("name")) or ""
+        rows.append({
+            "account_id": account_id, "happened_on": happened_on, "amount": amount,
+            "kind": plaid_kind(amount, is_liability, category, tx.get("name")),
+            "payee": str(name).strip() or None,
+            "source_category": (tx.get("personal_finance_category") or {}).get("detailed")
+                               or category,
+            "import_key": plaid_key(tx["transaction_id"]),
+            "file_key": import_key(account_id, happened_on, amount, tx.get("name")),
+        })
+    return rows, skipped
+
+
+def plaid_balance(account: dict) -> Decimal | None:
+    """An account's balance as Plaid reports it: current, else available.
+    Cards and loans come as what's owed (positive), as the app stores them."""
+    balances = account.get("balances") or {}
+    for key in ("current", "available"):
+        if balances.get(key) is not None:
+            return to_money(balances[key])
+    return None
