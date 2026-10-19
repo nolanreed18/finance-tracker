@@ -1,0 +1,37 @@
+# Daily bank sync (see sync.py): new transactions and today's balances from
+# every bank linked through Plaid, into the live database. Needs three
+# repository secrets (Settings -> Secrets and variables -> Actions):
+# DATABASE_URL, PLAID_CLIENT_ID and PLAID_SECRET. A bank that needs you to
+# sign in again makes the run red and GitHub emails the owner; the Accounts
+# page says which bank.
+name: Sync banks
+
+on:
+  schedule:
+    # Daily 11:30 UTC: 06:30 Chicago in summer (CDT), 05:30 in winter (CST),
+    # after banks have posted the previous day.
+    - cron: "30 11 * * *"
+  workflow_dispatch: # the "Run workflow" button on the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python sync.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID }}
+          PLAID_SECRET: ${{ secrets.PLAID_SECRET }}

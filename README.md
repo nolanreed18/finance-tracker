@@ -159,6 +159,28 @@ and `APP_PASSWORD=…` (the password the app asks for);
 `python apply_schema.py` creates the tables by hand. The app does this itself,
 and it's safe to run again: it never deletes anything.
 
+## Bank sync (Plaid)
+
+Instead of monthly CSV files, your banks can feed the app themselves. You
+sign in at each bank once through Plaid (a service banks work with; the app
+never sees your bank password), and from then on `sync.py` runs every
+morning in GitHub Actions (`.github/workflows/sync.yml`): it pulls the new
+transactions into the right accounts, with the same never-twice rule as the
+Import page, and saves every linked account's balance for the day, so net
+worth keeps itself up to date. Card payments arrive as transfers, not
+income. New transactions arrive uncategorised; give them a category on the
+Transactions page (a categoriser is on the later list).
+
+Setup, once: create a Plaid account at dashboard.plaid.com (the free Trial
+plan covers up to 10 banks), copy the client ID and the secret from
+**Developers → Keys**, and add them as repository secrets `PLAID_CLIENT_ID`
+and `PLAID_SECRET` (next to `DATABASE_URL`) and as the same two lines in
+the app's Streamlit secrets. Then link each bank on the Accounts page.
+Bank access tokens are stored in the app's database, with the data they
+unlock; removing a bank on the Accounts page tells Plaid to forget it too.
+If a bank asks you to sign in again, the morning run turns red, GitHub
+emails you, and the Accounts page says which bank.
+
 ## Backups
 
 `.github/workflows/backup.yml` runs `backup.py` every Sunday morning (and
@@ -200,4 +222,5 @@ up automatically (`.claude/hooks/session-start.sh`).
 | `schema.sql`, `apply_schema.py` | The tables (created automatically when the app first connects), and a script to create them by hand. |
 | `db.py` | Finds `DATABASE_URL` (in `.env`, or Streamlit secrets when online). |
 | `backup.py` | Dumps every table to CSV. |
+| `sync.py`, `app/plaid_api.py` | The daily bank sync, and the handful of Plaid calls it and the Accounts page make. |
 | `CLAUDE.md` | Rules for Claude when it works on this project. |

@@ -32,6 +32,8 @@ TABLES = [
     ("bills", "bill_id"),
     ("balances", "balance_id"),
     ("goals", "goal_id"),
+    ("connections", "connection_id"),
+    ("connected_accounts", "connected_account_id"),
     ("settings", "key"),
 ]
 

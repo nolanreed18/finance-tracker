@@ -46,6 +46,9 @@ create table if not exists transactions (
     -- Imported rows only: account|date|amount|description (logic.import_key),
     -- so the same bank row never imports twice.
     import_key      text unique,
+    -- What the bank's data feed called it (Plaid's category), for the
+    -- categoriser; blank for rows typed or imported by hand.
+    source_category text,
     created_on      date not null
 );
 create index if not exists transactions_happened_on on transactions (happened_on);
@@ -95,6 +98,35 @@ create table if not exists goals (
     account_id     bigint references accounts on delete set null,
     note           text,
     reached_on     date
+);
+
+-- A bank linked through Plaid: one row per sign-in at a bank (a Plaid
+-- "item"). The access token is what reads that bank; it lives here, with
+-- the data it unlocks, and is removed with the connection. The cursor is
+-- where the daily sync left off.
+create table if not exists connections (
+    connection_id     bigint generated always as identity primary key,
+    provider          text not null default 'plaid' check (provider in ('plaid')),
+    item_id           text not null unique,
+    access_token      text not null,
+    institution_name  text,
+    cursor            text,
+    linked_on         date not null,
+    last_synced_on    date,
+    last_error        text              -- e.g. ITEM_LOGIN_REQUIRED: sign in again
+);
+
+-- The bank's accounts under a connection, each matched to one of ours (or
+-- not yet: account_id null means "don't sync this one").
+create table if not exists connected_accounts (
+    connected_account_id  bigint generated always as identity primary key,
+    connection_id         bigint not null references connections on delete cascade,
+    provider_account_id   text not null unique,
+    account_id            bigint references accounts on delete set null,
+    name                  text not null,
+    mask                  text,            -- last four digits
+    kind                  text,            -- the bank's type: depository, credit, loan...
+    subtype               text             -- checking, credit card...
 );
 
 -- App settings, one row per key: "theme" is "light" or "dark".

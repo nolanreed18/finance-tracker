@@ -63,6 +63,15 @@ clicking merge).
   and this app is full of dollar signs.
 - Forms reset by bumping a counter in their key; set a widget's session state
   only before it is drawn (or via a flag read at the top of the page).
+- **The bank feed is Plaid**, through `app/plaid_api.py` only (thin: requests
+  and their JSON; tests fake `plaid_api.post` or its functions). Plaid's
+  shapes turn into our rows in `logic.plaid_rows`; `sync.py` (daily, in
+  `.github/workflows/sync.yml`, and "Sync now" on Accounts) applies them with
+  `data.apply_sync`, all or nothing, keyed `plaid:<transaction_id>` and also
+  checked against the file-import key so a row never lands twice. Pending
+  transactions wait until they post. Credentials are `PLAID_CLIENT_ID` and
+  `PLAID_SECRET` (environment, or `st.secrets`); bank access tokens live in
+  the `connections` table and are never printed or shown on a page.
 - A scheduled Claude task (none yet; the categoriser is on the "later" list)
   reaches the database only through one small script over Neon's HTTPS
   endpoint (`db.HttpCursor`, `data.use_http()`), with its commands
