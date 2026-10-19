@@ -83,7 +83,12 @@ def seed() -> dict[str, int]:
               (checking, date(2026, 9, 20), Decimal("-60.00"), "expense", food, "Grocer"))]
     data.set_budget(date(2026, 10, 1), food, Decimal("100"))
     data.set_budget(date(2026, 9, 1), food, Decimal("65"))     # 92% spent: close
-    return {"checking": checking, "card": card, "old": old, "food": food, "pay": pay, "tx": tx}
+    rent = data.add_bill("Rent", Decimal("1200"), "monthly", date(2026, 10, 12),
+                         account_id=checking)                                # overdue
+    phone = data.add_bill("Phone", Decimal("45.50"), "monthly", date(2026, 10, 20), autopay=True)
+    data.add_bill("Gym", Decimal("30"), "monthly", date(2026, 11, 1), active=False)
+    return {"checking": checking, "card": card, "old": old, "food": food, "pay": pay, "tx": tx,
+            "rent": rent, "phone": phone}
 
 
 @pytest.mark.parametrize("path", [HOME, *PAGES], ids=lambda p: p.stem)
@@ -429,3 +434,68 @@ def test_categories_are_added_renamed_and_archived_here():
     click(at, "Archive")
     assert data.categories()["name"].tolist() == ["Rent", "Pay"]
     assert any(":gray-badge[Archived]" in m.value for m in at.markdown)
+
+
+# ---- bills ------------------------------------------------------------------
+
+BILLS = ROOT / "app" / "pages" / "4_Bills.py"
+
+
+def test_bills_show_what_is_due_and_what_is_paused():
+    seed()
+    at = run(BILLS)
+    assert [m.value for m in at.metric] == ["$1,245.50", "1", "1"]
+    cards = [m.value for m in at.markdown if m.value.startswith("**")]
+    assert cards[0].startswith("**Rent** :red-badge[Overdue]") and "2 days overdue" in cards[0]
+    assert ":orange-badge[Due]" in cards[1] and ":blue-badge[Autopay]" in cards[1]
+    assert "due Tue Oct 20" in cards[1]
+    assert cards[2].startswith("**Gym** :gray-badge[Paused]")
+    assert [h.value for h in at.subheader] == ["Coming up", "Paused", "Edit"]
+
+
+def test_marking_paid_moves_the_date_and_logs_the_transaction():
+    ids = seed()
+    at = run(BILLS)
+    click(at, "Mark paid")                                  # the first card: Rent
+    assert data.bill(ids["rent"])["next_due_on"] == date(2026, 11, 12)
+    tx = data.transactions().iloc[0]
+    assert (tx["amount"], tx["payee"], tx["account"]) == (Decimal("-1200.00"), "Rent", "Checking")
+    assert at.success[0].value == "Rent paid; next due Thu Nov 12. Transaction logged."
+    before = len(data.transactions())
+    widget(at.checkbox, "Log a transaction when I mark a bill paid").uncheck().run()
+    click(at, "Mark paid")                                  # now Phone is first
+    assert data.bill(ids["phone"])["next_due_on"] == date(2026, 11, 20)
+    assert len(data.transactions()) == before
+
+
+def test_a_bill_without_an_account_cannot_log_a_payment():
+    seed()
+    at = run(BILLS)
+    widget(at.button, "Mark paid", 1).click().run()          # Phone has no account
+    assert "has no account" in at.error[0].value
+    assert len(data.transactions()) == 4
+
+
+def test_adding_a_bill():
+    seed()
+    at = run(BILLS)
+    click(at, "Add a bill")
+    widget(at.text_input, "Name").set_value("Internet")
+    widget(at.number_input, "Amount ($)").set_value(60.0)
+    widget(at.date_input, "Next due").set_value(date(2026, 10, 25))
+    click(at, "Add bill")
+    row = data.bills().set_index("name").loc["Internet"]
+    assert (row["amount"], row["cadence"], row["next_due_on"]) == (
+        Decimal("60.00"), "monthly", date(2026, 10, 25))
+    assert at.success[0].value == "Added Internet."
+
+
+def test_deleting_a_bill_needs_the_tick():
+    ids = seed()
+    at = new_app(BILLS)
+    at.session_state[ui.round_key("pick_bill")] = ids["phone"]
+    at.run()
+    assert widget(at.button, "Delete bill").disabled
+    widget(at.checkbox, "I want to delete this bill").check().run()
+    click(at, "Delete bill")
+    assert data.bill(ids["phone"]) is None

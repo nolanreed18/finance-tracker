@@ -331,3 +331,56 @@ def test_an_archived_category_keeps_its_budget_but_a_deleted_month_row_goes_with
     data.archive_category(food)
     rows = data.budgets(OCT)
     assert bool(rows.iloc[0]["archived"]) and rows.iloc[0]["budgeted"] == Decimal("100.00")
+
+
+# ---- bills ------------------------------------------------------------------
+
+def test_bills_are_listed_soonest_first_with_paused_ones_last():
+    checking = data.add_account("Checking", "checking")
+    rent = data.add_bill("Rent", "1200", "monthly", date(2026, 11, 1), account_id=checking)
+    phone = data.add_bill(" Phone ", Decimal("45.50"), "monthly", date(2026, 10, 20), autopay=True)
+    gym = data.add_bill("Gym", "30", "monthly", date(2026, 10, 15), active=False)
+    rows = data.bills()
+    assert rows["bill_id"].tolist() == [phone, rent, gym]
+    assert rows.iloc[0]["name"] == "Phone" and rows.iloc[0]["amount"] == Decimal("45.50")
+    assert rows.iloc[1]["account"] == "Checking" and bool(rows.iloc[0]["autopay"])
+    assert data.bills(active_only=True)["bill_id"].tolist() == [phone, rent]
+    data.update_bill(gym, active=True, amount="35")
+    assert data.bill(gym)["amount"] == Decimal("35.00")
+    with pytest.raises(ValueError):
+        data.add_bill("X", "1", "monthly", TODAY, colour="red")
+    data.delete_bill(gym)
+    assert len(data.bills()) == 2
+
+
+def test_marking_paid_moves_the_date_and_logs_the_payment_together():
+    checking = data.add_account("Checking", "checking")
+    rent_cat = data.add_category("Housing", "expense")
+    rent = data.add_bill("Rent", "1200", "monthly", date(2026, 10, 1), account_id=checking,
+                         category_id=rent_cat)
+    tx_id = data.mark_bill_paid(rent, TODAY, True, TODAY)
+    assert data.bill(rent)["next_due_on"] == date(2026, 11, 1)
+    tx = data.transaction(tx_id)
+    assert (tx["amount"], tx["kind"], tx["payee"], tx["category"], tx["happened_on"]) == (
+        Decimal("-1200.00"), "expense", "Rent", "Housing", TODAY)
+    assert data.mark_bill_paid(rent, TODAY, False, TODAY) is None
+    assert data.bill(rent)["next_due_on"] == date(2026, 12, 1)
+    assert len(data.transactions()) == 1
+
+
+def test_marking_paid_without_an_account_cannot_log_and_changes_nothing():
+    phone = data.add_bill("Phone", "45", "monthly", date(2026, 10, 20))
+    with pytest.raises(ValueError):
+        data.mark_bill_paid(phone, TODAY, True, TODAY)
+    assert data.bill(phone)["next_due_on"] == date(2026, 10, 20)      # rolled back
+    assert data.transactions().empty
+    data.mark_bill_paid(phone, TODAY, False, TODAY)
+    assert data.bill(phone)["next_due_on"] == date(2026, 11, 20)
+
+
+def test_deleting_an_account_or_category_leaves_the_bill():
+    wallet = data.add_account("Wallet", "cash")
+    fun = data.add_category("Fun", "expense")
+    gym = data.add_bill("Gym", "30", "monthly", TODAY, account_id=wallet, category_id=fun)
+    data.delete_account(wallet)
+    assert data.bill(gym)["account_id"] is None

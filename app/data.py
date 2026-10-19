@@ -408,6 +408,63 @@ def budget_months() -> list[date]:
         return [row[0] for row in cur.fetchall()]
 
 
+# ---- bills ------------------------------------------------------------------
+
+BILL_FIELDS = {"name", "amount", "cadence", "next_due_on", "account_id", "autopay",
+               "category_id", "active", "notes"}
+
+_BILLS = """
+    select b.*, a.name as account, c.name as category
+    from bills b
+    left join accounts a using (account_id)
+    left join categories c using (category_id)
+"""
+
+
+def bills(active_only: bool = False) -> pd.DataFrame:
+    """Bills soonest due first, with their account and category names;
+    paused (inactive) ones last, or left out."""
+    where = "where b.active" if active_only else ""
+    return _read(_BILLS + f" {where} order by b.active desc, b.next_due_on, lower(b.name)")
+
+
+def bill(bill_id: int) -> dict | None:
+    return _one(_BILLS + " where b.bill_id = %s", (bill_id,))
+
+
+def add_bill(name: str, amount, cadence: str, next_due_on: date, **fields) -> int:
+    unknown = set(fields) - BILL_FIELDS
+    if unknown:
+        raise ValueError(f"unknown bill fields {sorted(unknown)}")
+    return _insert("bills", "bill_id", {"name": name, "amount": amount, "cadence": cadence,
+                                        "next_due_on": next_due_on, **fields})
+
+
+def update_bill(bill_id: int, **fields) -> None:
+    _update("bills", "bill_id", bill_id, fields, BILL_FIELDS)
+
+
+def delete_bill(bill_id: int) -> None:
+    _delete("bills", "bill_id", bill_id)
+
+
+def mark_bill_paid(bill_id: int, paid_on: date, log_transaction: bool, on: date) -> int | None:
+    """Move the bill's due date on by one cadence and, when asked, log the
+    payment as an expense on its account, both together or neither. The new
+    transaction's id, or None."""
+    row = bill(bill_id)
+    with _transaction() as cur:
+        cur.execute("update bills set next_due_on = %s where bill_id = %s",
+                    (logic.next_due(row["next_due_on"], row["cadence"]), bill_id))
+        if not log_transaction:
+            return None
+        if row["account_id"] is None:
+            raise ValueError("the bill has no account to log the payment against")
+        return add_transaction(row["account_id"], paid_on, logic.signed(row["amount"], "expense"),
+                               "expense", on, category_id=row["category_id"], payee=row["name"],
+                               notes="Bill marked paid")
+
+
 # ---- balances ---------------------------------------------------------------
 
 def save_balance(account_id: int, as_of: date, amount) -> None:
