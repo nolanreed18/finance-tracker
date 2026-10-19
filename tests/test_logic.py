@@ -367,3 +367,72 @@ def test_top_payees():
                                       ["Streaming", Decimal("9.99"), 1]]
     assert logic.top_payees(SAMPLE, limit=1)["payee"].tolist() == ["Grocer"]
     assert logic.top_payees(SAMPLE.iloc[0:0]).empty
+
+
+# ---- bank file import -------------------------------------------------------
+
+def test_words_and_import_key():
+    assert logic.words("CAFE #12 - Main St.") == "cafe 12 main st"
+    assert logic.words(None) == ""
+    key = logic.import_key(3, date(2026, 10, 12), "-4.5", "CAFE #12 - Main St.")
+    assert key == "3|2026-10-12|-4.50|cafe 12 main st"
+    assert key == logic.import_key(3, date(2026, 10, 12), Decimal("-4.50"), "cafe 12, main st")
+
+
+def test_read_csv_keeps_every_cell_as_text():
+    frame = logic.read_csv("﻿Date, Description ,Amount\n\n2026-10-12,CAFE,-4.50\n")
+    assert frame.columns.tolist() == ["Date", "Description", "Amount"]
+    assert frame.iloc[0].tolist() == ["2026-10-12", "CAFE", "-4.50"]
+    with pytest.raises(ValueError):
+        logic.read_csv("   ")
+
+
+def test_a_signed_amount_file_maps_to_rows_with_keys():
+    frame = logic.read_csv("Transaction Date,Description,Amount,Category\n"
+                           "10/12/2026,CAFE #12,-4.50,Food\n"
+                           "10/01/2026,PAYROLL,\"2,500.00\",Pay\n"
+                           "10/13/2026,GAS,-40,Car\n")
+    rows, problems = logic.map_import(frame, 7, {"Food": 1, "Pay": 2})
+    assert [(r["happened_on"], r["amount"], r["kind"], r["payee"], r["category_id"])
+            for r in rows] == [
+        (date(2026, 10, 12), Decimal("-4.50"), "expense", "CAFE #12", 1),
+        (date(2026, 10, 1), Decimal("2500.00"), "income", "PAYROLL", 2),
+        (date(2026, 10, 13), Decimal("-40.00"), "expense", "GAS", None),
+    ]
+    assert rows[0]["import_key"] == "7|2026-10-12|-4.50|cafe 12"
+    assert problems == ["Categories not in your list were left blank: Car."]
+
+
+def test_debit_and_credit_columns_and_flipped_signs():
+    frame = logic.read_csv("Posted Date,Payee,Debit,Credit\n"
+                           "2026-10-12,Grocer,42.10,\n"
+                           "2026-10-14,Refund,,12.00\n"
+                           "2026-10-15,Pending,,\n")
+    rows, problems = logic.map_import(frame, 1)
+    assert [r["amount"] for r in rows] == [Decimal("-42.10"), Decimal("12.00")]
+    assert problems == ["Row 4: skipped — no amount."]
+    card = logic.read_csv("Date,Description,Amount\n2026-10-12,Shop,30.00\n2026-10-13,Payment,-30.00\n")
+    rows, _ = logic.map_import(card, 1, flip_signs=True)
+    assert [(r["amount"], r["kind"]) for r in rows] == [(Decimal("-30.00"), "expense"),
+                                                        (Decimal("30.00"), "income")]
+
+
+def test_bad_rows_and_duplicates_within_a_file_are_reported_not_imported():
+    frame = logic.read_csv("Date,Description,Amount\n"
+                           "2026-10-12,Cafe,-4.50\n"
+                           "2026-10-12,CAFE,-4.50\n"
+                           "not a date,Cafe,-4.50\n"
+                           "2026-10-13,Cafe,lots\n"
+                           ",,\n")
+    rows, problems = logic.map_import(frame, 1)
+    assert len(rows) == 1
+    assert problems == ["Row 3: skipped — the same as an earlier row in this file.",
+                        "Row 4: skipped — couldn't read the date “not a date”.",
+                        "Row 5: skipped — couldn't read the amount."]
+
+
+def test_a_file_without_the_needed_columns_is_refused():
+    rows, problems = logic.map_import(logic.read_csv("When,What,Cost\n1,2,3\n"), 1)
+    assert rows == [] and len(problems) == 3
+    rows, problems = logic.map_import(logic.read_csv("Date,Amount\n2026-10-12,1\n"), 1)
+    assert rows == [] and "description" in problems[0]
