@@ -6,14 +6,12 @@ end, Neon Postgres database, hosted free on Streamlit Community Cloud.
 
 ## What's in it
 
-The app is being built one page per pull request. So far:
-
-- **Home**: the sign-in, the Dark mode switch, and an empty **Needs
-  attention** list. As the other pages arrive it gains three headline
-  numbers (net worth, this month's spending against budget, this month's
-  savings rate) and flags bills due in the next 7 days or overdue, budget
-  categories over 90% for the month, and accounts with no balance update
-  for 30 days.
+- **Home**: three headline numbers (net worth now; this month's spending
+  against its budget; this month's savings rate), then **Needs attention**:
+  bills due in the next 7 days or overdue, budget categories at 90% or over
+  for the month, and accounts with no balance update for 30 days, each with
+  a button to the page that fixes it. Quick buttons to add a transaction or
+  this month's balances.
 - **Accounts**: every place your money lives or is owed (checking, savings,
   credit card, brokerage, retirement, loan, cash, other), with its bank,
   latest balance and when that was taken. Cards and loans are liabilities,
@@ -53,7 +51,7 @@ The app is being built one page per pull request. So far:
   same row (account, date, amount, description) never imports twice, so
   re-importing an overlapping file is safe.
 
-Coming next: Home's headline numbers and Needs attention list.
+Entering your first records: see [`SEED.md`](SEED.md).
 
 Settings you might want to change (the 7-day bill window, the 90% budget
 warning, the 30-day balance reminder, the account types) are in

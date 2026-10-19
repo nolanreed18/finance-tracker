@@ -436,3 +436,45 @@ def test_a_file_without_the_needed_columns_is_refused():
     assert rows == [] and len(problems) == 3
     rows, problems = logic.map_import(logic.read_csv("Date,Amount\n2026-10-12,1\n"), 1)
     assert rows == [] and "description" in problems[0]
+
+
+# ---- needs attention --------------------------------------------------------
+
+def test_needs_attention_is_ordered_bills_then_budgets_then_balances():
+    bills = pd.DataFrame([
+        {"name": "Rent", "amount": Decimal("1200"), "next_due_on": date(2026, 10, 12),
+         "active": True},
+        {"name": "Phone", "amount": Decimal("45.50"), "next_due_on": date(2026, 10, 20),
+         "active": True},
+        {"name": "Gym", "amount": Decimal("30"), "next_due_on": date(2026, 10, 15),
+         "active": False},                                               # paused: ignored
+        {"name": "Insurance", "amount": Decimal("90"), "next_due_on": date(2026, 11, 20),
+         "active": True},                                                # too far off
+    ])
+    budgets = pd.DataFrame([
+        {"name": "Food", "budgeted": Decimal("100"), "spent": Decimal("130")},
+        {"name": "Fun", "budgeted": Decimal("50"), "spent": Decimal("46")},
+        {"name": "Rent", "budgeted": Decimal("1200"), "spent": Decimal("1200")},
+        {"name": "Gas", "budgeted": Decimal("80"), "spent": Decimal("10")},
+        {"name": "Misc", "budgeted": None, "spent": Decimal("500")},
+    ])
+    accounts = pd.DataFrame([
+        {"name": "Checking", "closed_on": None, "balance_on": date(2026, 10, 10)},
+        {"name": "Visa", "closed_on": None, "balance_on": date(2026, 8, 1)},
+        {"name": "New", "closed_on": None, "balance_on": None},
+        {"name": "Old", "closed_on": date(2026, 9, 1), "balance_on": date(2026, 1, 1)},
+    ])
+    items = logic.needs_attention(bills, budgets, accounts, TODAY)
+    assert [(i.kind, i.headline, i.detail) for i in items] == [
+        ("overdue", "Rent", "$1,200.00 · 2 days overdue"),
+        ("due", "Phone", "$45.50 · due Tue Oct 20"),
+        ("over", "Food", "$130.00 of $100.00 · $30.00 over"),
+        ("over", "Rent", "$1,200.00 of $1,200.00 · $0.00 over"),
+        ("close", "Fun", "$46.00 of $50.00 · $4.00 left"),
+        ("stale", "New", "No balance yet"),
+        ("stale", "Visa", "Updated Aug 1"),
+    ]
+    assert {i.page for i in items} == {"pages/4_Bills.py", "pages/3_Budgets.py",
+                                       "pages/5_Net_worth.py"}
+    assert logic.needs_attention(bills.iloc[0:0], budgets.iloc[0:0], accounts.iloc[0:0],
+                                 TODAY) == []
