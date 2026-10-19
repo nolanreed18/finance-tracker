@@ -19,8 +19,14 @@ The app is being built one page per pull request. So far:
   latest balance and when that was taken. Cards and loans are liabilities,
   which net worth subtracts. An account with history is **closed**, never
   deleted (and can be reopened); only an empty one can be deleted.
+- **Transactions**: every line of income, spending and transfers between your
+  own accounts, with a date, account, amount, category, payee and notes.
+  Filter by month, account, category or a word in the payee or notes, and
+  see income, spending and the net for whatever is shown. You type amounts
+  as positive numbers; the kind decides the sign (spending is stored
+  negative).
 
-Coming next, in this order: Transactions, Budgets, Bills, Net
+Coming next, in this order: Budgets, Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
 
 Settings you might want to change (the 7-day bill window, the 90% budget

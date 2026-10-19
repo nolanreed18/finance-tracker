@@ -73,7 +73,15 @@ def seed() -> dict[str, int]:
     data.save_balance(checking, date(2026, 10, 10), Decimal("1250.00"))
     data.save_balance(card, date(2026, 8, 1), Decimal("430.25"))        # stale
     data.close_account(old, date(2026, 9, 30))
-    return {"checking": checking, "card": card, "old": old}
+    food = data.add_category("Food", "expense")
+    pay = data.add_category("Pay", "income")
+    tx = [data.add_transaction(a, on, amount, kind, TODAY, category_id=c, payee=p) for
+          a, on, amount, kind, c, p in (
+              (checking, date(2026, 10, 1), Decimal("2500.00"), "income", pay, "Employer"),
+              (checking, date(2026, 10, 3), Decimal("-42.10"), "expense", food, "Grocer"),
+              (card, date(2026, 10, 12), Decimal("-9.99"), "expense", None, "Streaming"),
+              (checking, date(2026, 9, 20), Decimal("-60.00"), "expense", food, "Grocer"))]
+    return {"checking": checking, "card": card, "old": old, "food": food, "pay": pay, "tx": tx}
 
 
 @pytest.mark.parametrize("path", [HOME, *PAGES], ids=lambda p: p.stem)
@@ -279,3 +287,77 @@ def test_editing_an_account_saves_and_refuses_a_taken_name():
     click(at, "Save changes")
     acct = data.account(ids["card"])
     assert (acct["name"], acct["institution"]) == ("Chase Visa", "Chase")
+
+
+# ---- transactions -----------------------------------------------------------
+
+TRANSACTIONS = ROOT / "app" / "pages" / "2_Transactions.py"
+
+
+def test_transactions_need_an_account_first():
+    at = run(TRANSACTIONS)
+    assert "No open accounts yet" in html(at) and not at.selectbox
+
+
+def test_transactions_show_totals_for_the_filter():
+    ids = seed()
+    at = run(TRANSACTIONS)
+    assert [m.value for m in at.metric] == ["$2,500.00", "$112.09", "$2,387.91"]
+    assert len(at.dataframe[0].value) == 4
+    widget(at.selectbox, "Month").set_value(date(2026, 9, 1)).run()
+    assert [m.value for m in at.metric] == ["$0.00", "$60.00", "−$60.00"]
+    assert len(at.dataframe[0].value) == 1
+    widget(at.selectbox, "Month").set_value(None)
+    widget(at.selectbox, "Category").set_value(ids["food"])
+    widget(at.text_input, "Search").set_value("grocer").run()
+    assert widget(at.metric, "Spending").value == "$102.10"
+    widget(at.text_input, "Search").set_value("zzz").run()
+    assert "Nothing matches" in html(at)
+
+
+def test_adding_an_expense_stores_it_negative():
+    ids = seed()
+    at = run(TRANSACTIONS)
+    click(at, "Add a transaction")
+    widget(at.number_input, "Amount ($)").set_value(12.5)
+    widget(at.selectbox, "Category").set_value(ids["food"])
+    widget(at.text_input, "Payee").set_value("Cafe")
+    click(at, "Add transaction")
+    row = data.transactions().iloc[0]
+    assert (row["amount"], row["kind"], row["payee"], row["category"], row["happened_on"]) == (
+        Decimal("-12.50"), "expense", "Cafe", "Food", TODAY)
+    assert at.success[0].value == "Added −$12.50 at Cafe."
+    assert widget(at.selectbox, "Transaction").value == int(row["transaction_id"])
+
+
+def test_an_amount_is_required():
+    seed()
+    at = run(TRANSACTIONS)
+    click(at, "Add a transaction")
+    click(at, "Add transaction")
+    assert at.error[0].value == "Enter the amount."
+    assert len(data.transactions()) == 4
+
+
+def test_editing_a_transaction_resigns_the_amount_from_its_kind():
+    ids = seed()
+    at = new_app(TRANSACTIONS)
+    at.session_state[ui.round_key("pick_transaction")] = ids["tx"][1]
+    at.run()
+    widget(at.radio, "Kind").set_value("income")
+    widget(at.number_input, "Amount ($)").set_value(50)
+    click(at, "Save changes")
+    row = data.transaction(ids["tx"][1])
+    assert (row["amount"], row["kind"]) == (Decimal("50.00"), "income")
+
+
+def test_deleting_a_transaction_needs_the_tick():
+    ids = seed()
+    at = new_app(TRANSACTIONS)
+    at.session_state[ui.round_key("pick_transaction")] = ids["tx"][2]
+    at.run()
+    assert widget(at.button, "Delete transaction").disabled
+    widget(at.checkbox, "I want to delete this transaction").check().run()
+    click(at, "Delete transaction")
+    assert data.transaction(ids["tx"][2]) is None
+    assert at.success[0].value == "Deleted −$9.99 at Streaming."

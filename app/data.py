@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import db  # noqa: E402
+import logic  # noqa: E402
 
 PING_AFTER_IDLE_S = 20
 
@@ -249,6 +250,107 @@ def delete_account(account_id: int) -> None:
     """Only an account with no transactions and no balances; close the others."""
     _delete("accounts", "account_id", account_id,
             "this account has transactions or balances; close it instead")
+
+
+# ---- categories -------------------------------------------------------------
+
+CATEGORY_FIELDS = {"name", "kind", "archived", "sort_order"}
+
+
+def categories(include_archived: bool = False) -> pd.DataFrame:
+    """Categories in picker order: expense ones first, then by sort order and name."""
+    where = "" if include_archived else "where not archived"
+    return _read(f"""
+        select * from categories {where}
+        order by kind, sort_order, lower(name)
+    """)
+
+
+def add_category(name: str, kind: str, **fields) -> int:
+    unknown = set(fields) - CATEGORY_FIELDS
+    if unknown:
+        raise ValueError(f"unknown category fields {sorted(unknown)}")
+    return _insert("categories", "category_id", {"name": name, "kind": kind, **fields})
+
+
+def update_category(category_id: int, **fields) -> None:
+    _update("categories", "category_id", category_id, fields, CATEGORY_FIELDS)
+
+
+def archive_category(category_id: int, archived: bool = True) -> None:
+    """Archived categories leave the pickers; their transactions and budgets stay."""
+    _update("categories", "category_id", category_id, {"archived": archived}, CATEGORY_FIELDS)
+
+
+# ---- transactions -----------------------------------------------------------
+
+TRANSACTION_FIELDS = {"account_id", "happened_on", "amount", "kind", "category_id", "payee",
+                      "notes"}
+
+_TRANSACTIONS = """
+    select t.*, a.name as account, c.name as category
+    from transactions t
+    join accounts a using (account_id)
+    left join categories c using (category_id)
+"""
+
+
+def transactions(month: date | None = None, account_id: int | None = None,
+                 category_id: int | None = None, search: str | None = None) -> pd.DataFrame:
+    """Transactions newest first, with account and category names, narrowed
+    by any of: a month (its first day), an account, a category, and text in
+    the payee or notes."""
+    where, params = [], {}
+    if month is not None:
+        where.append("t.happened_on >= %(start)s and t.happened_on < %(end)s")
+        params.update(start=month, end=logic.add_months(month, 1))
+    if account_id is not None:
+        where.append("t.account_id = %(account_id)s")
+        params["account_id"] = account_id
+    if category_id is not None:
+        where.append("t.category_id = %(category_id)s")
+        params["category_id"] = category_id
+    if search and search.strip():
+        where.append("(t.payee ilike %(search)s or t.notes ilike %(search)s)")
+        params["search"] = f"%{search.strip()}%"
+    clause = f"where {' and '.join(where)}" if where else ""
+    return _read(_TRANSACTIONS + f" {clause} order by t.happened_on desc, t.transaction_id desc",
+                 params)
+
+
+def transaction(transaction_id: int) -> dict | None:
+    return _one(_TRANSACTIONS + " where t.transaction_id = %s", (transaction_id,))
+
+
+def transaction_months() -> list[date]:
+    """The first day of every month with a transaction, newest first."""
+    with _cursor() as cur:
+        cur.execute("""
+            select distinct date_trunc('month', happened_on)::date from transactions
+            order by 1 desc
+        """)
+        return [row[0] for row in cur.fetchall()]
+
+
+def add_transaction(account_id: int, happened_on: date, amount, kind: str, on: date,
+                    **fields) -> int:
+    """A transaction, dated `on` as created. The amount is stored as given
+    (signed: income positive, spending negative; logic.signed sorts that out
+    from what was typed)."""
+    unknown = set(fields) - TRANSACTION_FIELDS
+    if unknown:
+        raise ValueError(f"unknown transaction fields {sorted(unknown)}")
+    return _insert("transactions", "transaction_id", {
+        "account_id": account_id, "happened_on": happened_on, "amount": amount,
+        "kind": kind, "created_on": on, **fields})
+
+
+def update_transaction(transaction_id: int, **fields) -> None:
+    _update("transactions", "transaction_id", transaction_id, fields, TRANSACTION_FIELDS)
+
+
+def delete_transaction(transaction_id: int) -> None:
+    _delete("transactions", "transaction_id", transaction_id)
 
 
 # ---- balances ---------------------------------------------------------------

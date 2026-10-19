@@ -54,6 +54,16 @@ def add_months(d: date, n: int) -> date:
     raise ValueError(d)  # unreachable: every month has a 28th
 
 
+def month_label(d: date) -> str:
+    return f"{d:%B %Y}"
+
+
+def recent_months(today: date, n: int) -> list[date]:
+    """The first days of this month and the n-1 before it, newest first."""
+    this = month_start(today)
+    return [add_months(this, -k) for k in range(n)]
+
+
 # ---- money ------------------------------------------------------------------
 
 def to_money(x) -> Decimal | None:
@@ -92,6 +102,43 @@ def money(n) -> str:
 def percent(share) -> str:
     """'42%' for 0.42; '—' when there is no share to show."""
     return "—" if share is None else f"{share:.0%}"
+
+
+# ---- transactions -----------------------------------------------------------
+
+def signed(amount, kind: str) -> Decimal:
+    """The stored amount from what was typed: an expense is negative, income
+    positive, a transfer keeps its sign (negative leaves the account)."""
+    amount = to_money(amount) or Decimal("0.00")
+    if kind == "expense":
+        return -abs(amount)
+    if kind == "income":
+        return abs(amount)
+    return amount
+
+
+def totals(frame: pd.DataFrame) -> dict[str, Decimal]:
+    """Income, spending (as a positive number), transfers (net) and the net
+    of income minus spending, over a frame of transactions."""
+    zero = Decimal("0.00")
+    sums = {"income": zero, "spending": zero, "transfers": zero}
+    for row in frame.itertuples(index=False):
+        amount = to_money(row.amount) or zero
+        if row.kind == "income":
+            sums["income"] += amount
+        elif row.kind == "expense":
+            sums["spending"] -= amount
+        else:
+            sums["transfers"] += amount
+    sums["net"] = sums["income"] - sums["spending"]
+    return sums
+
+
+def transaction_label(happened_on, payee, amount, account) -> str:
+    """'Oct 12 · Grocer · −$42.10 · Checking', for the pick-one dropdown."""
+    who = value(payee) or value(account) or ""
+    tail = f" · {account}" if value(payee) and value(account) else ""
+    return f"{happened_on:%b} {happened_on.day} · {who} · {money(amount)}{tail}"
 
 
 # ---- accounts ---------------------------------------------------------------

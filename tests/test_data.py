@@ -9,6 +9,7 @@ import pytest
 import apply_schema
 import config
 import data
+import logic
 
 
 @pytest.fixture(autouse=True)
@@ -197,3 +198,84 @@ def test_accounts_list_open_ones_first_then_by_name():
     old = data.add_account("Old", "checking")
     data.close_account(old, TODAY)
     assert data.accounts()["account_id"].tolist() == [amy, zed, old]
+
+
+# ---- categories and transactions --------------------------------------------
+
+def test_categories_list_expense_first_and_archived_ones_only_on_request():
+    rent = data.add_category("Rent", "expense", sort_order=1)
+    food = data.add_category("Food", "expense", sort_order=0)
+    pay = data.add_category("Pay", "income")
+    assert data.categories()["category_id"].tolist() == [food, rent, pay]
+    data.archive_category(rent)
+    assert data.categories()["category_id"].tolist() == [food, pay]
+    assert data.categories(include_archived=True)["category_id"].tolist() == [food, rent, pay]
+    data.archive_category(rent, archived=False)
+    data.update_category(rent, name="Housing")
+    assert data.categories()["name"].tolist() == ["Food", "Housing", "Pay"]
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        data.add_category("food", "expense")
+    with pytest.raises(ValueError):
+        data.add_category("X", "expense", colour="red")
+
+
+def seed_transactions() -> dict:
+    checking = data.add_account("Checking", "checking")
+    card = data.add_account("Visa", "credit card", is_liability=True)
+    food = data.add_category("Food", "expense")
+    pay = data.add_category("Pay", "income")
+    rows = [
+        (checking, date(2026, 10, 1), Decimal("2500.00"), "income", pay, "Employer"),
+        (checking, date(2026, 10, 3), Decimal("-42.10"), "expense", food, "Grocer"),
+        (card, date(2026, 10, 12), Decimal("-9.99"), "expense", None, "Streaming"),
+        (checking, date(2026, 10, 12), Decimal("-200.00"), "transfer", None, None),
+        (checking, date(2026, 9, 20), Decimal("-60.00"), "expense", food, "Grocer"),
+    ]
+    ids = [data.add_transaction(a, on, amount, kind, TODAY, category_id=c, payee=p)
+           for a, on, amount, kind, c, p in rows]
+    return {"checking": checking, "card": card, "food": food, "pay": pay, "ids": ids}
+
+
+def test_transactions_are_newest_first_with_names_and_decimal_amounts():
+    s = seed_transactions()
+    rows = data.transactions()
+    assert rows["transaction_id"].tolist() == [s["ids"][3], s["ids"][2], s["ids"][1],
+                                               s["ids"][0], s["ids"][4]]
+    first = rows.iloc[1]
+    assert (first["account"], first["payee"]) == ("Visa", "Streaming") and logic.blank(first["category"])
+    assert first["amount"] == Decimal("-9.99") and isinstance(first["amount"], Decimal)
+    assert data.transaction_months() == [date(2026, 10, 1), date(2026, 9, 1)]
+
+
+def test_transactions_are_filtered_by_month_account_category_and_text():
+    s = seed_transactions()
+    assert len(data.transactions(month=date(2026, 10, 1))) == 4
+    assert len(data.transactions(month=date(2026, 9, 1))) == 1
+    assert len(data.transactions(account_id=s["card"])) == 1
+    assert len(data.transactions(category_id=s["food"])) == 2
+    assert data.transactions(search=" grocer").shape[0] == 2
+    assert data.transactions(month=date(2026, 10, 1), category_id=s["food"],
+                             search="GROCER")["transaction_id"].tolist() == [s["ids"][1]]
+    assert data.transactions(search="nothing").empty
+
+
+def test_a_transaction_is_edited_and_deleted_and_keeps_its_account_from_deletion():
+    s = seed_transactions()
+    tx = s["ids"][1]
+    data.update_transaction(tx, amount=Decimal("-45.00"), payee=" Market ", category_id=None)
+    row = data.transaction(tx)
+    assert (row["amount"], row["payee"], row["category"]) == (Decimal("-45.00"), "Market", None)
+    with pytest.raises(ValueError):
+        data.update_transaction(tx, created_on=TODAY)
+    with pytest.raises(data.InUse):
+        data.delete_account(s["card"])
+    for tx_id in s["ids"]:
+        data.delete_transaction(tx_id)
+    assert data.transactions().empty and data.transaction_months() == []
+    data.delete_account(s["card"])
+
+
+def test_archiving_a_category_keeps_its_transactions():
+    s = seed_transactions()
+    data.archive_category(s["food"])
+    assert data.transaction(s["ids"][1])["category"] == "Food"
