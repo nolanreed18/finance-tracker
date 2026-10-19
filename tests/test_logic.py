@@ -150,3 +150,34 @@ def test_the_pick_one_label_names_the_payee_or_the_account():
                                    "Checking") == "Oct 12 · Grocer · −$42.10 · Checking"
     assert logic.transaction_label(date(2026, 10, 12), None, Decimal("1000"),
                                    "Checking") == "Oct 12 · Checking · $1,000.00"
+
+
+# ---- budgets ----------------------------------------------------------------
+
+def test_budget_state_is_over_at_100_percent_and_close_at_90():
+    assert logic.budget_state(Decimal("100"), Decimal("100")) == "over"
+    assert logic.budget_state(Decimal("100"), Decimal("120")) == "over"
+    assert logic.budget_state(Decimal("100"), Decimal("90")) == "close"
+    assert logic.budget_state(Decimal("100"), Decimal("89.99")) == "ok"
+    assert logic.budget_state(Decimal("100"), None) == "ok"
+    assert logic.budget_state(None, Decimal("50")) is None
+    assert logic.budget_state(Decimal("0"), Decimal("50")) is None
+    assert logic.budget_state(Decimal("100"), Decimal("80"), warn=Decimal("0.8")) == "close"
+
+
+def test_budget_share_is_clamped_for_the_bar():
+    assert logic.budget_share(Decimal("200"), Decimal("50")) == 0.25
+    assert logic.budget_share(Decimal("200"), Decimal("500")) == 1.0
+    assert logic.budget_share(Decimal("200"), Decimal("-5")) == 0.0        # a refund
+    assert logic.budget_share(None, Decimal("50")) == 0.0
+
+
+def test_budget_summary_counts_left_only_against_budgeted_categories():
+    frame = pd.DataFrame([
+        {"budgeted": Decimal("300"), "spent": Decimal("120.50")},
+        {"budgeted": Decimal("100"), "spent": Decimal("130")},
+        {"budgeted": None, "spent": Decimal("40")},               # unbudgeted spending
+    ])
+    assert logic.budget_summary(frame) == {"budgeted": Decimal("400.00"),
+                                           "spent": Decimal("290.50"),
+                                           "left": Decimal("149.50")}

@@ -279,3 +279,55 @@ def test_archiving_a_category_keeps_its_transactions():
     s = seed_transactions()
     data.archive_category(s["food"])
     assert data.transaction(s["ids"][1])["category"] == "Food"
+
+
+# ---- budgets ----------------------------------------------------------------
+
+OCT, SEP, NOV = date(2026, 10, 1), date(2026, 9, 1), date(2026, 11, 1)
+
+
+def test_budgets_show_every_expense_category_with_spending_for_the_month():
+    s = seed_transactions()
+    rent = data.add_category("Rent", "expense")
+    data.set_budget(OCT, s["food"], "100")
+    rows = data.budgets(OCT).set_index("category_id")
+    assert rows.index.tolist() == [s["food"], rent]             # income categories stay out
+    assert rows.loc[s["food"], "budgeted"] == Decimal("100.00")
+    assert rows.loc[s["food"], "spent"] == Decimal("42.10")      # October only, as a positive
+    assert logic.blank(rows.loc[rent, "budgeted"]) and rows.loc[rent, "spent"] == 0
+    assert data.budgets(SEP).loc[lambda f: f["category_id"] == s["food"], "spent"].iloc[0] \
+        == Decimal("60.00")
+
+
+def test_a_budget_is_saved_over_and_cleared_by_zero_or_blank():
+    food = data.add_category("Food", "expense")
+    data.set_budget(OCT, food, Decimal("100"))
+    data.set_budget(OCT, food, 150.0)
+    assert data.budgets(OCT)["budgeted"].tolist() == [Decimal("150.00")]
+    data.set_budget(OCT, food, 0)
+    assert data.budgets(OCT)["budget_id"].isna().all()
+    data.set_budget(OCT, food, "80")
+    data.set_budget(OCT, food, None)
+    assert data.budget_months() == []
+
+
+def test_copy_last_month_fills_only_what_is_missing():
+    food = data.add_category("Food", "expense")
+    rent = data.add_category("Rent", "expense")
+    data.set_budget(SEP, food, "100")
+    data.set_budget(SEP, rent, "900")
+    data.set_budget(OCT, rent, "950")
+    assert data.copy_budgets(SEP, OCT) == 1
+    rows = data.budgets(OCT).set_index("category_id")
+    assert rows.loc[food, "budgeted"] == Decimal("100.00")
+    assert rows.loc[rent, "budgeted"] == Decimal("950.00")      # kept
+    assert data.copy_budgets(SEP, NOV) == 2
+    assert data.budget_months() == [NOV, OCT, SEP]
+
+
+def test_an_archived_category_keeps_its_budget_but_a_deleted_month_row_goes_with_it():
+    food = data.add_category("Food", "expense")
+    data.set_budget(OCT, food, "100")
+    data.archive_category(food)
+    rows = data.budgets(OCT)
+    assert bool(rows.iloc[0]["archived"]) and rows.iloc[0]["budgeted"] == Decimal("100.00")

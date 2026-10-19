@@ -81,6 +81,8 @@ def seed() -> dict[str, int]:
               (checking, date(2026, 10, 3), Decimal("-42.10"), "expense", food, "Grocer"),
               (card, date(2026, 10, 12), Decimal("-9.99"), "expense", None, "Streaming"),
               (checking, date(2026, 9, 20), Decimal("-60.00"), "expense", food, "Grocer"))]
+    data.set_budget(date(2026, 10, 1), food, Decimal("100"))
+    data.set_budget(date(2026, 9, 1), food, Decimal("65"))     # 92% spent: close
     return {"checking": checking, "card": card, "old": old, "food": food, "pay": pay, "tx": tx}
 
 
@@ -361,3 +363,69 @@ def test_deleting_a_transaction_needs_the_tick():
     click(at, "Delete transaction")
     assert data.transaction(ids["tx"][2]) is None
     assert at.success[0].value == "Deleted −$9.99 at Streaming."
+
+
+# ---- budgets ----------------------------------------------------------------
+
+BUDGETS = ROOT / "app" / "pages" / "3_Budgets.py"
+
+
+def test_the_budget_shows_each_category_against_its_spending():
+    seed()
+    data.add_category("Rent", "expense")
+    at = run(BUDGETS)
+    assert [m.value for m in at.metric] == ["$100.00", "$42.10", "$57.90"]   # categorised only
+    bars = at.get("progress")
+    assert len(bars) == 1 and bars[0].value == 42
+    assert "\\$42.10 of \\$100.00 · \\$57.90 left" in bars[0].proto.text
+    assert any(":green-badge[On track]" in m.value for m in at.markdown)
+    assert any("no budget set" in c.value for c in at.caption)
+    widget(at.selectbox, "Month").set_value(date(2026, 9, 1)).run()
+    assert [m.value for m in at.metric] == ["$65.00", "$60.00", "$5.00"]
+    assert any(":orange-badge[Close to budget]" in m.value for m in at.markdown)
+
+
+def test_setting_budgets_saves_every_category_at_once():
+    ids = seed()
+    rent = data.add_category("Rent", "expense")
+    at = run(BUDGETS)
+    click(at, "Set budgets")
+    widget(at.number_input, "Food").set_value(120.0)
+    widget(at.number_input, "Rent").set_value(900.0)
+    click(at, "Save budgets")
+    rows = data.budgets(date(2026, 10, 1)).set_index("category_id")
+    assert rows.loc[ids["food"], "budgeted"] == Decimal("120.00")
+    assert rows.loc[rent, "budgeted"] == Decimal("900.00")
+    assert at.success[0].value == "Budgets saved for October 2026."
+
+
+def test_copy_last_month_appears_only_for_an_unbudgeted_month():
+    seed()
+    at = run(BUDGETS)
+    assert not [b for b in at.button if b.label.startswith("Copy ")]
+    widget(at.selectbox, "Month").set_value(date(2026, 11, 1)).run()
+    click(at, "Copy October 2026")
+    assert data.budgets(date(2026, 11, 1))["budgeted"].tolist() == [Decimal("100.00")]
+    assert at.success[0].value == "Copied 1 budget from October 2026."
+
+
+def test_categories_are_added_renamed_and_archived_here():
+    ids = seed()
+    at = run(BUDGETS)
+    widget(at.radio, "Section").set_value("Categories").run()
+    click(at, "Add a category")
+    widget(at.text_input, "Name").set_value("food")
+    click(at, "Add category")
+    assert at.error[0].value == "There's already a category with that name."
+    widget(at.text_input, "Name").set_value("Rent")
+    click(at, "Add category")
+    assert data.categories()["name"].tolist() == ["Food", "Rent", "Pay"]
+    assert at.success[0].value == "Added Rent."
+    at.session_state[ui.round_key("pick_category")] = ids["food"]
+    at.run()
+    widget(at.text_input, "Name", -1).set_value("Groceries")
+    click(at, "Save changes")
+    assert data.transaction(ids["tx"][1])["category"] == "Groceries"
+    click(at, "Archive")
+    assert data.categories()["name"].tolist() == ["Rent", "Pay"]
+    assert any(":gray-badge[Archived]" in m.value for m in at.markdown)

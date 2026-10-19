@@ -25,8 +25,13 @@ The app is being built one page per pull request. So far:
   see income, spending and the net for whatever is shown. You type amounts
   as positive numbers; the kind decides the sign (spending is stored
   negative).
+- **Budgets**: pick a month and see, per spending category, what you
+  budgeted against what you spent as a bar with the amount left; **Close
+  to budget** at 90%, **Over budget** at 100%. Set all the month's amounts
+  in one form, or **Copy last month**. Categories (income and expense) are
+  added, renamed and archived here.
 
-Coming next, in this order: Budgets, Bills, Net
+Coming next, in this order: Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
 
 Settings you might want to change (the 7-day bill window, the 90% budget

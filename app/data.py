@@ -353,6 +353,61 @@ def delete_transaction(transaction_id: int) -> None:
     _delete("transactions", "transaction_id", transaction_id)
 
 
+# ---- budgets ----------------------------------------------------------------
+
+def budgets(month: date) -> pd.DataFrame:
+    """Every active expense category for a month (its first day), with what
+    was budgeted (None when nothing yet) and what was spent, as a positive
+    number. Archived categories appear only when they have a budget or
+    spending that month."""
+    return _read("""
+        select c.category_id, c.name, c.archived, c.sort_order, b.budget_id, b.amount as budgeted,
+               coalesce((select -sum(t.amount) from transactions t
+                         where t.category_id = c.category_id and t.kind = 'expense'
+                           and t.happened_on >= %(start)s and t.happened_on < %(end)s), 0)
+                   as spent
+        from categories c
+        left join budgets b on b.category_id = c.category_id and b.month = %(start)s
+        where c.kind = 'expense'
+        order by c.archived, c.sort_order, lower(c.name)
+    """, {"start": month, "end": logic.add_months(month, 1)})
+
+
+def set_budget(month: date, category_id: int, amount) -> None:
+    """The budget for a category in a month (its first day): saved over, or
+    removed when the amount is None or zero."""
+    amount = logic.to_money(amount)
+    with _cursor() as cur:
+        if amount is None or amount == 0:
+            cur.execute("delete from budgets where month = %s and category_id = %s",
+                        (month, category_id))
+        else:
+            cur.execute("""
+                insert into budgets (month, category_id, amount) values (%s, %s, %s)
+                on conflict (month, category_id) do update set amount = excluded.amount
+            """, (month, category_id, amount))
+
+
+def copy_budgets(from_month: date, to_month: date) -> int:
+    """Last month's budgets into a month that has none yet, all or nothing;
+    how many were copied. Categories already budgeted in `to_month` are
+    left as they are."""
+    with _transaction() as cur:
+        cur.execute("""
+            insert into budgets (month, category_id, amount)
+            select %(to)s, category_id, amount from budgets where month = %(from)s
+            on conflict (month, category_id) do nothing
+        """, {"from": from_month, "to": to_month})
+        return cur.rowcount
+
+
+def budget_months() -> list[date]:
+    """The first day of every month with a budget, newest first."""
+    with _cursor() as cur:
+        cur.execute("select distinct month from budgets order by 1 desc")
+        return [row[0] for row in cur.fetchall()]
+
+
 # ---- balances ---------------------------------------------------------------
 
 def save_balance(account_id: int, as_of: date, amount) -> None:
