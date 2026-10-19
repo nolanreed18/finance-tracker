@@ -8,7 +8,7 @@ Money is Decimal throughout, never float.
 import re
 from dataclasses import dataclass
 from datetime import date, time, timedelta
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 
 import pandas as pd
 
@@ -856,3 +856,69 @@ def sync_badge_state(last_synced_on, last_error, today: date) -> str:
     if last is None:
         return "never"
     return "fresh" if (today - last).days <= 1 else "stale"
+
+
+# ---- interest on what's owed ------------------------------------------------
+
+PAYOFF_MAX_MONTHS = 600
+
+
+def monthly_rate(apr) -> Decimal:
+    """A yearly percentage rate (18.99) as a monthly fraction (0.015825)."""
+    apr = to_money(apr) or Decimal("0")
+    return apr / 100 / 12
+
+
+def interest_if_short(balance, payment, apr) -> Decimal:
+    """Roughly what a card charges next month when `payment` leaves some of
+    `balance` unpaid: the unpaid part at the monthly rate. (Once a card isn't
+    paid in full, new purchases usually accrue too, so the real figure runs
+    higher.)"""
+    balance = to_money(balance) or Decimal("0")
+    payment = to_money(payment) or Decimal("0")
+    unpaid = max(balance - payment, Decimal("0"))
+    return (unpaid * monthly_rate(apr)).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def payoff_plan(balance, apr, payment) -> dict | None:
+    """Paying `payment` a month against `balance` at `apr`: each month the
+    payment comes off first, then interest is added to what's left (so paying
+    in full costs nothing). {"months", "interest", "paid"}; None when the
+    payment doesn't even cover the interest (it never clears). A zero or
+    negative balance clears at once."""
+    balance = to_money(balance) or Decimal("0")
+    payment = to_money(payment) or Decimal("0")
+    rate = monthly_rate(apr)
+    if balance <= 0:
+        return {"months": 0, "interest": Decimal("0.00"), "paid": Decimal("0.00")}
+    if payment <= 0:
+        return None
+    owed, interest, paid, months = balance, Decimal("0"), Decimal("0"), 0
+    while owed > 0:
+        this = min(payment, owed)
+        owed -= this
+        paid += this
+        months += 1
+        if owed <= 0:
+            break
+        charge = (owed * rate).quantize(CENT, rounding=ROUND_HALF_UP)
+        if payment <= charge or months >= PAYOFF_MAX_MONTHS:
+            return None
+        owed += charge
+        interest += charge
+    return {"months": months, "interest": interest.quantize(CENT), "paid": paid.quantize(CENT)}
+
+
+def payment_to_clear(balance, apr, months: int) -> Decimal:
+    """The level monthly payment that clears `balance` in `months` at `apr`,
+    paid at the start of each month as payoff_plan counts it (the loan
+    formula, annuity-due); balance / months when there's no interest."""
+    balance = to_money(balance) or Decimal("0")
+    if balance <= 0 or months <= 0:
+        return Decimal("0.00")
+    rate = monthly_rate(apr)
+    if rate == 0:
+        return (balance / months).quantize(CENT, rounding=ROUND_CEILING)
+    factor = (1 + rate) ** months
+    # Rounded up to the cent, so the plan really does clear within `months`.
+    return (balance * rate * factor / (factor - 1) / (1 + rate)).quantize(CENT, rounding=ROUND_CEILING)

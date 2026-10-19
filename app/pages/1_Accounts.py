@@ -294,7 +294,13 @@ with st.form(f"edit_account_{picked}_{edit_round}"):
                                 index=index_of(config.ACCOUNT_TYPES, acct["kind"]), help=TYPE_HELP)
     e_institution = bank_col.text_input("Bank or institution", value=acct["institution"] or "")
     e_liability = st.checkbox("Money owed (a liability)", value=bool(acct["is_liability"]))
-    e_opened = st.date_input("Opened on", value=acct["opened_on"])
+    opened_col, apr_col = st.columns(2)
+    e_opened = opened_col.date_input("Opened on", value=acct["opened_on"])
+    e_apr = apr_col.number_input("Interest rate (APR %)", min_value=0.0, max_value=99.99,
+                                 step=0.25, format="%.2f",
+                                 value=None if acct["apr"] is None else float(acct["apr"]),
+                                 help="From the card's or loan's statement. Used by the payoff "
+                                      "calculator below.")
     e_notes = st.text_area("Notes", value=acct["notes"] or "")
     saved = st.form_submit_button("Save changes", type="primary")
 if saved:
@@ -304,8 +310,43 @@ if saved:
         st.error("There's already an account with that name.")
     else:
         data.update_account(picked, name=e_name, kind=e_kind, institution=e_institution,
-                            is_liability=e_liability, opened_on=e_opened, notes=e_notes)
+                            is_liability=e_liability, opened_on=e_opened, notes=e_notes,
+                            apr=None if e_apr is None else logic.to_money(e_apr))
         done("Saved.", "edit_round")
+
+# ---- payoff ------------------------------------------------------------------
+
+if acct["is_liability"]:
+    st.subheader("Payoff")
+    owed_now = logic.value(acct["balance"])
+    owed_col, apr_col, pay_col = st.columns(3)
+    owed = owed_col.number_input("Owed ($)", min_value=0.0, step=10.0, format="%.2f",
+                                 value=0.0 if owed_now is None else float(owed_now),
+                                 key=f"payoff_owed_{picked}")
+    apr = apr_col.number_input("APR %", min_value=0.0, max_value=99.99, step=0.25, format="%.2f",
+                               value=0.0 if acct["apr"] is None else float(acct["apr"]),
+                               key=f"payoff_apr_{picked}")
+    payment = pay_col.number_input("I'll pay ($/month)", min_value=0.0, step=10.0, format="%.2f",
+                                   value=owed, key=f"payoff_pay_{picked}")
+    if acct["apr"] is None:
+        st.caption("Save the card's APR in the form above and it's filled in here.")
+    plan = logic.payoff_plan(owed, apr, payment)
+    next_col, months_col, total_col = st.columns(3, gap="xsmall", wrap=False)
+    next_col.metric("Interest next month", logic.money(logic.interest_if_short(owed, payment, apr)),
+                    border=True)
+    months_col.metric("Months to clear", "never" if plan is None else plan["months"], border=True)
+    total_col.metric("Total interest", "—" if plan is None else logic.money(plan["interest"]),
+                     border=True)
+    if plan is None:
+        st.warning("That payment doesn't cover the interest, so the balance never shrinks.")
+    elif plan["months"] > 1:
+        clear = [f"**{md(logic.money(logic.payment_to_clear(owed, apr, n)))}** a month clears it "
+                 f"in {n} months" for n in (3, 6, 12) if n < plan["months"]]
+        if clear:
+            st.markdown("; ".join(clear) + ".")
+    st.caption("Interest is added monthly at APR ÷ 12 on what's left after the payment. Once a "
+               "card isn't paid in full, most issuers also charge interest on new purchases, so "
+               "the real figure runs a little higher. Paying the full balance costs nothing.")
 
 st.divider()
 has_history = (acct["transactions"] or 0) + (acct["balances"] or 0) > 0
