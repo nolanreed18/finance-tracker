@@ -678,3 +678,23 @@ def test_import_refuses_a_file_without_the_right_headers():
 def test_import_needs_an_account_first():
     at = run(IMPORT)
     assert "No open accounts yet" in html(at)
+
+
+DISCOVER_CSV = ("Trans. Date,Post Date,Description,Amount,Category\n"
+                "10/12/2026,10/13/2026,CAFE #12,4.50,Restaurants\n"
+                "10/10/2026,10/10/2026,INTERNET PAYMENT - THANK YOU,-250.00,Payments and Credits\n")
+
+
+def test_a_card_file_with_positive_charges_is_flipped_for_you():
+    ids = seed()
+    at = run(IMPORT)
+    widget(at.selectbox, "Account the file belongs to").set_value(ids["card"])
+    widget(at.text_area, "…or paste the rows, header line first").set_value(DISCOVER_CSV).run()
+    assert widget(at.checkbox, "Spending is positive in this file (flip the signs)").value is True
+    assert any("come in as **transfers**" in c.value for c in at.caption)
+    click(at, "Import 2 transactions into Visa")
+    rows = data.transactions(account_id=ids["card"]).set_index("payee")
+    assert (rows.loc["CAFE #12", "amount"], rows.loc["CAFE #12", "kind"]) == (Decimal("-4.50"),
+                                                                             "expense")
+    assert (rows.loc["INTERNET PAYMENT - THANK YOU", "amount"],
+            rows.loc["INTERNET PAYMENT - THANK YOU", "kind"]) == (Decimal("250.00"), "transfer")

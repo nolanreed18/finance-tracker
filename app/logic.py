@@ -524,17 +524,25 @@ def clock(t: time) -> str:
 ALIASES = {
     "date": ["date", "transaction date", "posted date", "posting date", "trans date",
              "post date"],
-    "description": ["description", "payee", "merchant", "name", "memo", "details",
+    "description": ["description", "payee", "merchant", "name", "details",
                     "transaction description"],
     "amount": ["amount", "transaction amount", "amount usd", "net amount"],
     "debit": ["debit", "debits", "withdrawal", "withdrawals", "money out", "debit amount"],
     "credit": ["credit", "credits", "deposit", "deposits", "money in", "credit amount"],
     "category": ["category", "type of spend", "spending category"],
+    "type": ["type", "transaction type"],          # Chase: Sale, Payment, Return...
+    "notes": ["memo", "notes", "note"],
 }
+
+# Words that mark a positive row on a card or loan as a payment onto it (a
+# transfer from another account), not a refund or income.
+PAYMENT_WORDS = ("payment", "autopay", "thank you")
 
 
 def _norm(header: str) -> str:
-    return re.sub(r"[\s_\-]+", " ", str(header)).strip().lower()
+    """A header lower-cased with punctuation and runs of spaces squeezed, so
+    "Trans. Date", "trans_date" and "Trans Date" are the same header."""
+    return re.sub(r"[\s_\-.]+", " ", str(header)).strip().lower()
 
 
 def match_columns(headers, aliases: dict[str, list[str]] = ALIASES) -> dict[str, str]:
@@ -580,16 +588,60 @@ def read_csv(text: str) -> pd.DataFrame:
     return frame
 
 
+def import_kind(amount: Decimal, is_liability: bool, *clues) -> str:
+    """What an imported row is. Negative is spending. Positive is income on a
+    checking or savings account; on a card or loan it's a payment onto the
+    account (a transfer) when the description, type or category says so,
+    otherwise a refund, kept as spending so it reduces the month's total."""
+    if amount < 0:
+        return "expense"
+    if not is_liability:
+        return "income"
+    text = words(" ".join(str(c) for c in clues if not blank(c)))
+    return "transfer" if any(w in text for w in PAYMENT_WORDS) else "expense"
+
+
+def spending_looks_positive(frame: pd.DataFrame, is_liability: bool) -> bool:
+    """Whether a card file lists charges as positive numbers (Discover, Amex)
+    rather than negative (Chase). A payment onto a card always reduces what's
+    owed, so the sign of the payment rows gives the sign away: negative
+    payments mean positive charges. A file with no payment row falls back to
+    the sign most rows carry (most rows on a card are charges). Never guessed
+    for debit/credit files or for checking and savings accounts."""
+    columns = match_columns(frame.columns)
+    if not is_liability or "amount" not in columns:
+        return False
+    clue_columns = [columns[f] for f in ("description", "type", "category") if f in columns]
+    payments = {"positive": 0, "negative": 0}
+    others = {"positive": 0, "negative": 0}
+    for _, row in frame.iterrows():
+        try:
+            amount = to_money(row[columns["amount"]])
+        except ValueError:
+            continue
+        if amount is None or amount == 0:
+            continue
+        text = words(" ".join(str(row[c]) for c in clue_columns if not blank(row[c])))
+        bucket = payments if any(w in text for w in PAYMENT_WORDS) else others
+        bucket["positive" if amount > 0 else "negative"] += 1
+    if payments["positive"] != payments["negative"]:
+        return payments["negative"] > payments["positive"]
+    return others["positive"] > others["negative"]
+
+
 def map_import(frame: pd.DataFrame, account_id: int, categories: dict[str, int] | None = None,
-               flip_signs: bool = False) -> tuple[list[dict], list[str]]:
+               flip_signs: bool = False, is_liability: bool = False) -> tuple[list[dict], list[str]]:
     """Rows ready for data.import_transactions, and a note for each problem.
 
     The file needs a date column, a description column and either one
     amount column (signed) or debit and credit columns. Spending must come
     out negative: tick flip_signs for a card statement that lists charges as
-    positive numbers. A row's category is matched to yours by name (any
-    capitalisation); unknown ones are left blank. Row numbers in the notes
-    are file rows (the header is row 1).
+    positive numbers (spending_looks_positive guesses). On a card or loan
+    (is_liability) a positive row is a payment onto it, imported as a
+    transfer, unless nothing calls it a payment, when it's a refund. A row's
+    category is matched to yours by name (any capitalisation); unknown ones
+    are left blank; a memo column becomes the notes. Row numbers in the
+    notes are file rows (the header is row 1).
     """
     columns = match_columns(frame.columns)
     problems = []
@@ -647,10 +699,12 @@ def map_import(frame: pd.DataFrame, account_id: int, categories: dict[str, int] 
             problems.append(f"Row {line}: skipped — the same as an earlier row in this file.")
             continue
         seen.add(key)
+        kind = import_kind(amount, is_liability, description, cell(row, "type"), raw_category)
+        memo = cell(row, "notes")
         rows.append({
             "account_id": account_id, "happened_on": parsed.date(), "amount": amount,
-            "kind": "income" if amount > 0 else "expense", "category_id": category_id,
-            "payee": description or None, "import_key": key,
+            "kind": kind, "category_id": category_id, "payee": description or None,
+            "notes": None if memo is None else str(memo).strip() or None, "import_key": key,
         })
     if unknown_categories:
         shown = ", ".join(sorted(unknown_categories)[:5])

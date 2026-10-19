@@ -478,3 +478,74 @@ def test_needs_attention_is_ordered_bills_then_budgets_then_balances():
                                        "pages/5_Net_worth.py"}
     assert logic.needs_attention(bills.iloc[0:0], budgets.iloc[0:0], accounts.iloc[0:0],
                                  TODAY) == []
+
+
+# ---- card files -------------------------------------------------------------
+
+CAPITAL_ONE = ("Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+               "2026-10-12,2026-10-13,1234,CAFE #12,Dining,4.50,\n"
+               "2026-10-10,2026-10-11,1234,CAPITAL ONE MOBILE PYMT AuthDate 10-Oct,Payment/Credit,,250.00\n"
+               "2026-10-09,2026-10-10,1234,STORE RETURN,Merchandise,,12.00\n")
+DISCOVER = ("Trans. Date,Post Date,Description,Amount,Category\n"
+            "10/12/2026,10/13/2026,CAFE #12,4.50,Restaurants\n"
+            "10/10/2026,10/10/2026,INTERNET PAYMENT - THANK YOU,-250.00,Payments and Credits\n"
+            "10/09/2026,10/10/2026,GAS STATION,40.00,Gasoline\n")
+AMEX = ("Date,Description,Card Member,Account #,Amount,Category\n"
+        "10/12/2026,CAFE #12,N REED,-11111,4.50,Restaurant-Restaurant\n"
+        "10/10/2026,AUTOPAY PAYMENT - THANK YOU,N REED,-11111,-250.00,\n")
+CHASE = ("Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n"
+         "10/12/2026,10/13/2026,CAFE #12,Food & Drink,Sale,-4.50,\n"
+         "10/10/2026,10/10/2026,Payment Thank You-Mobile,,Payment,250.00,\n"
+         "10/09/2026,10/10/2026,STORE,Shopping,Return,12.00,gift returned\n")
+
+
+def kinds(text, flip=False):
+    rows, problems = logic.map_import(logic.read_csv(text), 1, flip_signs=flip, is_liability=True)
+    assert problems == [] or all("Categories" in p for p in problems), problems
+    return [(r["payee"], r["amount"], r["kind"]) for r in rows]
+
+
+def test_headers_with_dots_match():
+    assert logic.match_columns(["Trans. Date", "Post Date", "Amount"])["date"] == "Trans. Date"
+
+
+def test_capital_one_debit_credit_file():
+    assert kinds(CAPITAL_ONE) == [
+        ("CAFE #12", Decimal("-4.50"), "expense"),
+        ("CAPITAL ONE MOBILE PYMT AuthDate 10-Oct", Decimal("250.00"), "transfer"),
+        ("STORE RETURN", Decimal("12.00"), "expense"),                 # a refund
+    ]
+    assert logic.spending_looks_positive(logic.read_csv(CAPITAL_ONE), True) is False
+
+
+def test_discover_and_amex_list_charges_positive_and_are_flipped():
+    for text in (DISCOVER, AMEX):
+        frame = logic.read_csv(text)
+        assert logic.spending_looks_positive(frame, True) is True
+        assert logic.spending_looks_positive(frame, False) is False   # never guessed for checking
+    assert kinds(DISCOVER, flip=True) == [
+        ("CAFE #12", Decimal("-4.50"), "expense"),
+        ("INTERNET PAYMENT - THANK YOU", Decimal("250.00"), "transfer"),
+        ("GAS STATION", Decimal("-40.00"), "expense"),
+    ]
+    assert kinds(AMEX, flip=True)[1] == ("AUTOPAY PAYMENT - THANK YOU", Decimal("250.00"),
+                                         "transfer")
+
+
+def test_chase_file_keeps_its_signs_and_reads_type_and_memo():
+    frame = logic.read_csv(CHASE)
+    assert logic.spending_looks_positive(frame, True) is False
+    rows, _ = logic.map_import(frame, 1, is_liability=True)
+    assert [(r["amount"], r["kind"]) for r in rows] == [
+        (Decimal("-4.50"), "expense"), (Decimal("250.00"), "transfer"),
+        (Decimal("12.00"), "expense")]
+    assert rows[2]["notes"] == "gift returned" and rows[0]["notes"] is None
+
+
+def test_positive_rows_on_a_checking_account_are_income():
+    rows, _ = logic.map_import(logic.read_csv(
+        "Date,Description,Amount\n2026-10-01,PAYROLL,2500\n2026-10-02,Mobile payment,-250\n"), 1)
+    assert [r["kind"] for r in rows] == ["income", "expense"]
+    assert logic.import_kind(Decimal("5"), False, "payment") == "income"
+    assert logic.import_kind(Decimal("5"), True, None, "Payment", None) == "transfer"
+    assert logic.import_kind(Decimal("5"), True, "Refund", "Return", "Shopping") == "expense"

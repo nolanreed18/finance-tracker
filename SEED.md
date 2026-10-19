@@ -30,6 +30,17 @@ transactions can be edited or deleted.
      statement lists charges as positive numbers, tick **Spending is
      positive**. Importing an overlapping file later is safe: the same row
      never goes in twice.
+   Where the CSV button is on each card's website (menus move, but roughly):
+
+   | Card | Where | Notes |
+   |---|---|---|
+   | Capital One | the account → View Transactions → Download → CSV | debit and credit columns; nothing to tick |
+   | Discover | Activity & Statements → Download Transactions → CSV | charges are positive; the flip box ticks itself |
+   | Amex | Statements & Activity → Download → CSV, with all details | charges are positive; the flip box ticks itself |
+   | Chase | the account → the download icon above the activity → CSV | charges are negative; the Memo column becomes notes |
+
+   On a card, a payment row ("PAYMENT - THANK YOU") imports as a **transfer**,
+   not income, and a refund stays as spending with a positive sign.
    - **By hand**: **Add transaction** on Home or Transactions. Type the
      amount as a positive number; the kind (income, expense, transfer)
      decides the sign.
