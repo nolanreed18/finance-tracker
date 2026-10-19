@@ -259,6 +259,16 @@ def account_badges(kind: str, is_liability: bool, closed: bool, stale: bool) -> 
     return " ".join(parts)
 
 
+def budget_badge(state: str | None) -> str:
+    """Over budget (red), close to it (orange), on track (green); '' when
+    nothing is budgeted."""
+    if state == "over":
+        return attention_badge("over")
+    if state == "close":
+        return attention_badge("close")
+    return badge("green", "On track") if state == "ok" else ""
+
+
 def kind_badge(kind: str) -> str:
     """A transaction kind: income green, expense grey, transfer blue."""
     return badge(KIND_COLORS.get(kind, "gray"), kind.capitalize())

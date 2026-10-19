@@ -141,6 +141,43 @@ def transaction_label(happened_on, payee, amount, account) -> str:
     return f"{happened_on:%b} {happened_on.day} · {who} · {money(amount)}{tail}"
 
 
+# ---- budgets ----------------------------------------------------------------
+
+def budget_state(budgeted, spent, warn: Decimal = config.BUDGET_WARN) -> str | None:
+    """'over' at 100% of the budget, 'close' at BUDGET_WARN, 'ok' below;
+    None when nothing is budgeted."""
+    budgeted, spent = to_money(budgeted), to_money(spent) or Decimal("0")
+    if budgeted is None or budgeted <= 0:
+        return None
+    if spent >= budgeted:
+        return "over"
+    if spent >= budgeted * warn:
+        return "close"
+    return "ok"
+
+
+def budget_share(budgeted, spent) -> float:
+    """Spent as a share of budgeted, for a progress bar: 0.0 to 1.0."""
+    budgeted, spent = to_money(budgeted), to_money(spent) or Decimal("0")
+    if budgeted is None or budgeted <= 0:
+        return 0.0
+    return float(max(Decimal("0"), min(spent / budgeted, Decimal("1"))))
+
+
+def budget_summary(frame: pd.DataFrame) -> dict[str, Decimal]:
+    """Budgeted and spent totals over a month's budget rows (data.budgets),
+    and what's left, counting only budgeted categories' spending as "left"."""
+    zero = Decimal("0.00")
+    budgeted = spent = spent_budgeted = zero
+    for row in frame.itertuples(index=False):
+        b, s = to_money(row.budgeted), to_money(row.spent) or zero
+        spent += s
+        if b is not None:
+            budgeted += b
+            spent_budgeted += s
+    return {"budgeted": budgeted, "spent": spent, "left": budgeted - spent_budgeted}
+
+
 # ---- accounts ---------------------------------------------------------------
 
 def stale_balance(as_of, today: date, days: int = config.STALE_BALANCE_DAYS) -> bool:
