@@ -88,8 +88,10 @@ def seed() -> dict[str, int]:
                          account_id=checking)                                # overdue
     phone = data.add_bill("Phone", Decimal("45.50"), "monthly", date(2026, 10, 20), autopay=True)
     data.add_bill("Gym", Decimal("30"), "monthly", date(2026, 11, 1), active=False)
+    trip = data.add_goal("Trip", Decimal("5000"), target_on=date(2027, 4, 1), account_id=checking)
+    data.add_goal("Old laptop", Decimal("800"), reached_on=date(2026, 9, 1))
     return {"checking": checking, "card": card, "old": old, "food": food, "pay": pay, "tx": tx,
-            "rent": rent, "phone": phone}
+            "rent": rent, "phone": phone, "trip": trip}
 
 
 @pytest.mark.parametrize("path", [HOME, *PAGES], ids=lambda p: p.stem)
@@ -538,3 +540,48 @@ def test_updating_balances_saves_every_open_account_at_once():
     assert data.account(ids["checking"])["balance_on"] == TODAY      # prefilled, saved too
     assert at.success[0].value == "Saved 2 balances as of today."
     assert [m.value for m in at.metric] == ["$850.00", "$1,250.00", "$400.00"]
+
+
+# ---- goals ------------------------------------------------------------------
+
+GOALS = ROOT / "app" / "pages" / "6_Goals.py"
+
+
+def test_goals_show_progress_from_the_accounts_balance():
+    seed()
+    at = run(GOALS)
+    cards = [m.value for m in at.markdown if m.value.startswith("**")]
+    assert cards[0].startswith("**Trip** :blue-badge[Saving]")
+    assert "\\$1,250.00 of \\$5,000.00 · by Apr 1, 2027 · in Checking" in cards[0]
+    assert cards[1].startswith("**Old laptop** :green-badge[Reached]")
+    bars = at.get("progress")
+    assert bars[0].value == 25 and "\\$625.00 a month to reach it" in bars[0].proto.text
+    assert bars[1].value == 0 and bars[1].proto.text == "0%"
+
+
+def test_adding_a_goal_and_marking_it_reached():
+    ids = seed()
+    at = run(GOALS)
+    click(at, "Add a goal")
+    widget(at.text_input, "Name").set_value("Emergency fund")
+    widget(at.number_input, "Target ($)").set_value(1000.0)
+    widget(at.selectbox, "Account holding the money").set_value(ids["checking"])
+    click(at, "Add goal")
+    goal = data.goals().set_index("name").loc["Emergency fund"]
+    assert goal["target_amount"] == Decimal("1000.00") and goal["account_id"] == ids["checking"]
+    assert at.success[0].value == "Added Emergency fund."
+    assert any(":green-badge[Reached]" in m.value and "Emergency fund" in m.value
+               for m in at.markdown)                     # $1,250 covers it already
+    click(at, "Mark reached")
+    assert data.goal(int(goal["goal_id"]))["reached_on"] == TODAY
+
+
+def test_deleting_a_goal_needs_the_tick():
+    ids = seed()
+    at = new_app(GOALS)
+    at.session_state[ui.round_key("pick_goal")] = ids["trip"]
+    at.run()
+    assert widget(at.button, "Delete goal").disabled
+    widget(at.checkbox, "I want to delete this goal").check().run()
+    click(at, "Delete goal")
+    assert data.goal(ids["trip"]) is None

@@ -272,6 +272,15 @@ def bill_badges(state: str | None, autopay: bool, active: bool) -> str:
     return " ".join(parts)
 
 
+GOAL_BADGES = {"reached": ("green", "Reached"), "late": ("red", "Past its date"),
+               "on_track": ("blue", "Saving")}
+
+
+def goal_badge(state: str) -> str:
+    color, text = GOAL_BADGES.get(state, ("gray", state.replace("_", " ").capitalize()))
+    return badge(color, text)
+
+
 def budget_badge(state: str | None) -> str:
     """Over budget (red), close to it (orange), on track (green); '' when
     nothing is budgeted."""

@@ -274,3 +274,32 @@ def test_a_closed_account_counts_until_the_month_it_closed():
     assert logic.net_worth_history(frame)["net_worth"].tolist() == [
         Decimal("500.00"), Decimal("500.00"), Decimal("50.00")]
     assert logic.net_worth_history(frame.iloc[0:0]).empty
+
+
+# ---- goals ------------------------------------------------------------------
+
+def test_goal_progress_is_the_balance_against_the_target():
+    assert logic.goal_progress(Decimal("250"), Decimal("1000")) == (Decimal("250.00"), 0.25)
+    assert logic.goal_progress(Decimal("1500"), Decimal("1000")) == (Decimal("1500.00"), 1.0)
+    assert logic.goal_progress(None, Decimal("1000")) == (Decimal("0.00"), 0.0)
+    assert logic.goal_progress(Decimal("5"), None) == (Decimal("5.00"), 0.0)
+
+
+def test_goal_state():
+    target = Decimal("1000")
+    assert logic.goal_state(Decimal("1000"), target, None, TODAY) == "reached"
+    assert logic.goal_state(Decimal("10"), target, None, TODAY, reached_on=TODAY) == "reached"
+    assert logic.goal_state(Decimal("10"), target, date(2026, 10, 13), TODAY) == "late"
+    assert logic.goal_state(Decimal("10"), target, TODAY, TODAY) == "on_track"
+    assert logic.goal_state(Decimal("10"), target, None, TODAY) == "on_track"
+
+
+def test_goal_pace_spreads_what_is_left_over_the_months_ahead():
+    target = Decimal("1000")
+    assert logic.goal_pace(Decimal("400"), target, date(2027, 4, 1), TODAY) \
+        == "$100.00 a month to reach it"
+    assert logic.goal_pace(Decimal("400"), target, date(2026, 10, 30), TODAY) \
+        == "$600.00 a month to reach it"                    # same month: at least one month
+    assert logic.goal_pace(Decimal("400"), target, None, TODAY) == "$600.00 to go"
+    assert logic.goal_pace(Decimal("400"), target, date(2026, 1, 1), TODAY) == "$600.00 to go"
+    assert logic.goal_pace(Decimal("1000"), target, date(2027, 1, 1), TODAY) == ""

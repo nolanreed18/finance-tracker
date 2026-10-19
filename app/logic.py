@@ -194,6 +194,47 @@ def bills_per_month(frame: pd.DataFrame) -> Decimal:
     return total
 
 
+# ---- goals ------------------------------------------------------------------
+
+def goal_progress(balance, target) -> tuple[Decimal, float]:
+    """(saved, share) for a goal: the holding account's latest balance (zero
+    when none) and how far it is to the target, 0.0 to 1.0 for a bar."""
+    saved = to_money(balance) or Decimal("0.00")
+    target = to_money(target)
+    if target is None or target <= 0:
+        return saved, 0.0
+    return saved, float(max(Decimal("0"), min(saved / target, Decimal("1"))))
+
+
+def goal_state(balance, target, target_on, today: date, reached_on=None) -> str:
+    """'reached' (marked so, or the balance covers the target), 'late' when the
+    target date has passed, 'on_track' otherwise."""
+    if value(reached_on) is not None:
+        return "reached"
+    saved, share = goal_progress(balance, target)
+    if share >= 1.0:
+        return "reached"
+    target_on = value(target_on)
+    if target_on is not None and target_on < today:
+        return "late"
+    return "on_track"
+
+
+def goal_pace(balance, target, target_on, today: date) -> str:
+    """'$120.00 a month to reach it', '$300.00 to go', or '' when nothing is
+    left or there's no date ahead."""
+    saved, _ = goal_progress(balance, target)
+    target = to_money(target) or Decimal("0")
+    to_go = target - saved
+    if to_go <= 0:
+        return ""
+    target_on = value(target_on)
+    if target_on is None or target_on <= today:
+        return f"{money(to_go)} to go"
+    months = max(1, (target_on.year - today.year) * 12 + target_on.month - today.month)
+    return f"{money((to_go / months).quantize(CENT, rounding=ROUND_HALF_UP))} a month to reach it"
+
+
 # ---- budgets ----------------------------------------------------------------
 
 def budget_state(budgeted, spent, warn: Decimal = config.BUDGET_WARN) -> str | None:
