@@ -431,3 +431,10 @@ def test_deleting_the_account_leaves_the_goal_without_one():
     goal_id = data.add_goal("Trip", "100", account_id=wallet)
     data.delete_account(wallet)
     assert data.goal(goal_id)["account_id"] is None
+
+
+def test_transactions_since_a_date():
+    s = seed_transactions()
+    assert len(data.transactions(since=date(2026, 10, 1))) == 4
+    assert data.transactions(since=date(2026, 10, 12))["transaction_id"].tolist() == [
+        s["ids"][3], s["ids"][2]]

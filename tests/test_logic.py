@@ -303,3 +303,67 @@ def test_goal_pace_spreads_what_is_left_over_the_months_ahead():
     assert logic.goal_pace(Decimal("400"), target, None, TODAY) == "$600.00 to go"
     assert logic.goal_pace(Decimal("400"), target, date(2026, 1, 1), TODAY) == "$600.00 to go"
     assert logic.goal_pace(Decimal("1000"), target, date(2027, 1, 1), TODAY) == ""
+
+
+# ---- stats ------------------------------------------------------------------
+
+def tx(*rows) -> pd.DataFrame:
+    base = {"kind": "expense", "category": "Food", "payee": "Grocer"}
+    return pd.DataFrame([{**base, **r} for r in rows],
+                        columns=["happened_on", "amount", "kind", "category", "payee"])
+
+
+SAMPLE = tx(
+    {"happened_on": date(2026, 10, 1), "amount": Decimal("2500"), "kind": "income",
+     "category": "Pay", "payee": "Employer"},
+    {"happened_on": date(2026, 10, 3), "amount": Decimal("-42.10")},
+    {"happened_on": date(2026, 10, 12), "amount": Decimal("-9.99"), "category": None,
+     "payee": "Streaming"},
+    {"happened_on": date(2026, 10, 12), "amount": Decimal("-200"), "kind": "transfer"},
+    {"happened_on": date(2026, 9, 20), "amount": Decimal("-60")},
+    {"happened_on": date(2026, 9, 21), "amount": Decimal("-15"), "category": "Fun",
+     "payee": "Cinema"},
+)
+
+
+def test_savings_rate():
+    assert logic.savings_rate(Decimal("2500"), Decimal("52.09")) == Decimal("0.9792")
+    assert logic.savings_rate(Decimal("100"), Decimal("150")) == Decimal("-0.5000")
+    assert logic.savings_rate(Decimal("0"), Decimal("50")) is None
+    assert logic.savings_rate(None, None) is None
+
+
+def test_spending_by_category_is_positive_biggest_first_with_uncategorised_apart():
+    october = logic.spending_by_category(logic.in_month(SAMPLE, date(2026, 10, 1)))
+    assert october.values.tolist() == [["Food", Decimal("42.10")],
+                                       ["(uncategorised)", Decimal("9.99")]]
+    assert logic.spending_by_category(SAMPLE.iloc[0:0]).empty
+    assert logic.spending_by_category(logic.in_month(SAMPLE, date(2026, 8, 1))).empty
+
+
+def test_category_by_month_has_a_column_per_month_and_a_total():
+    table = logic.category_by_month(SAMPLE, [date(2026, 8, 1), date(2026, 9, 1), date(2026, 10, 1)])
+    assert table.columns.tolist() == ["category", "Aug 2026", "Sep 2026", "Oct 2026", "Total"]
+    assert table.values.tolist() == [
+        ["Food", Decimal("0.00"), Decimal("60.00"), Decimal("42.10"), Decimal("102.10")],
+        ["Fun", Decimal("0.00"), Decimal("15.00"), Decimal("0.00"), Decimal("15.00")],
+        ["(uncategorised)", Decimal("0.00"), Decimal("0.00"), Decimal("9.99"), Decimal("9.99")],
+    ]
+    assert logic.category_by_month(SAMPLE, [date(2026, 8, 1)]).empty
+
+
+def test_monthly_flows_are_oldest_first_with_zeros_for_quiet_months():
+    flows = logic.monthly_flows(SAMPLE, [date(2026, 10, 1), date(2026, 9, 1), date(2026, 8, 1)])
+    assert flows["month"].tolist() == [date(2026, 8, 1), date(2026, 9, 1), date(2026, 10, 1)]
+    assert flows["income"].tolist() == [Decimal("0.00"), Decimal("0.00"), Decimal("2500.00")]
+    assert flows["spending"].tolist() == [Decimal("0.00"), Decimal("75.00"), Decimal("52.09")]
+    assert flows["savings_rate"].tolist() == [None, None, Decimal("0.9792")]
+
+
+def test_top_payees():
+    payees = logic.top_payees(SAMPLE)
+    assert payees.values.tolist() == [["Grocer", Decimal("102.10"), 2],
+                                      ["Cinema", Decimal("15.00"), 1],
+                                      ["Streaming", Decimal("9.99"), 1]]
+    assert logic.top_payees(SAMPLE, limit=1)["payee"].tolist() == ["Grocer"]
+    assert logic.top_payees(SAMPLE.iloc[0:0]).empty
