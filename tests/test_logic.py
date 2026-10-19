@@ -94,3 +94,21 @@ def test_bank_headers_are_matched_loosely():
     assert logic.match_columns(["Transaction Date", "Payee", "Amount", "Category"]) == {
         "date": "Transaction Date", "description": "Payee", "amount": "Amount",
         "category": "Category"}
+
+
+# ---- accounts ---------------------------------------------------------------
+
+def test_a_balance_is_stale_after_thirty_days_or_when_there_is_none():
+    assert logic.stale_balance(None, TODAY)
+    assert logic.stale_balance(date(2026, 9, 14), TODAY)              # exactly 30 days
+    assert not logic.stale_balance(date(2026, 9, 15), TODAY)
+    assert logic.stale_balance(date(2026, 10, 1), TODAY, days=10)
+
+
+def test_balance_age_text():
+    assert logic.balance_age(TODAY, TODAY) == "updated today"
+    assert logic.balance_age(date(2026, 10, 13), TODAY) == "updated 1 day ago"
+    assert logic.balance_age(date(2026, 10, 1), TODAY) == "updated 13 days ago"
+    assert logic.balance_age(date(2026, 9, 2), TODAY) == "updated Sep 2"
+    assert logic.balance_age(date(2025, 12, 2), TODAY) == "updated Dec 2, 2025"
+    assert logic.balance_age(None, TODAY) == "no balance yet"

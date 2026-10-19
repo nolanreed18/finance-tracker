@@ -1,5 +1,8 @@
 """data.py against a real (throwaway) Postgres with the real schema."""
 
+from datetime import date
+from decimal import Decimal
+
 import psycopg
 import pytest
 
@@ -134,3 +137,63 @@ def test_names_are_unique_whatever_the_capitalisation(database):
             conn.execute("insert into categories (name, kind) values ('FOOD', 'expense')")
         with pytest.raises(psycopg.errors.UniqueViolation):
             conn.execute("insert into accounts (name, kind) values ('checking', 'savings')")
+
+
+# ---- accounts ---------------------------------------------------------------
+
+TODAY = date(2026, 10, 14)
+
+
+def test_an_account_is_added_edited_and_listed_with_its_latest_balance():
+    checking = data.add_account(" Checking ", "checking", institution="", opened_on=TODAY)
+    card = data.add_account("Card", "credit card", is_liability=True)
+    data.save_balance(checking, date(2026, 10, 1), Decimal("100.00"))
+    data.save_balance(checking, date(2026, 10, 10), Decimal("250.50"))
+    data.save_balance(checking, date(2026, 10, 10), Decimal("260.50"))   # same day: replaced
+    rows = data.accounts().set_index("account_id")
+    assert rows.loc[checking, "name"] == "Checking" and rows.loc[checking, "institution"] is None
+    assert rows.loc[checking, "balance"] == Decimal("260.50")
+    assert rows.loc[checking, "balance_on"] == date(2026, 10, 10)
+    assert rows.loc[checking, "balances"] == 2 and rows.loc[checking, "transactions"] == 0
+    assert rows.loc[card, "balance"] is None and bool(rows.loc[card, "is_liability"])
+    data.update_account(card, name="Visa", institution="Chase")
+    assert data.account(card)["name"] == "Visa"
+    with pytest.raises(ValueError):
+        data.update_account(card, balance=1)
+    with pytest.raises(ValueError):
+        data.add_account("X", "cash", colour="blue")
+
+
+def test_account_names_are_unique_whatever_the_capitalisation():
+    data.add_account("Checking", "checking")
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        data.add_account("checking", "savings")
+
+
+def test_closing_keeps_history_and_leaves_the_open_list():
+    checking = data.add_account("Checking", "checking")
+    data.save_balance(checking, TODAY, Decimal("10"))
+    data.close_account(checking, TODAY)
+    assert data.open_accounts().empty
+    assert data.account(checking)["closed_on"] == TODAY
+    assert data.account(checking)["balance"] == Decimal("10.00")
+    data.reopen_account(checking)
+    assert data.open_accounts()["account_id"].tolist() == [checking]
+
+
+def test_only_an_empty_account_can_be_deleted():
+    checking = data.add_account("Checking", "checking")
+    data.save_balance(checking, TODAY, Decimal("10"))
+    with pytest.raises(data.InUse):
+        data.delete_account(checking)
+    empty = data.add_account("Wallet", "cash")
+    data.delete_account(empty)
+    assert data.accounts()["account_id"].tolist() == [checking]
+
+
+def test_accounts_list_open_ones_first_then_by_name():
+    zed = data.add_account("Zed", "savings")
+    amy = data.add_account("Amy", "checking")
+    old = data.add_account("Old", "checking")
+    data.close_account(old, TODAY)
+    assert data.accounts()["account_id"].tolist() == [amy, zed, old]

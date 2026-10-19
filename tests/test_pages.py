@@ -2,6 +2,7 @@
 with data, the sign-in keeps it private, and the look is a saved choice."""
 
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -63,9 +64,16 @@ def opened(at: AppTest) -> bool:
     return any(h.value == "Needs attention" for h in at.subheader)
 
 
-def seed() -> None:
+def seed() -> dict[str, int]:
     """A little of everything, for the draws-with-data tests (grows with each page)."""
-    data.set_setting("theme", "light")
+    checking = data.add_account("Checking", "checking", institution="First Bank",
+                                opened_on=date(2020, 1, 1))
+    card = data.add_account("Visa", "credit card", is_liability=True)
+    old = data.add_account("Old savings", "savings")
+    data.save_balance(checking, date(2026, 10, 10), Decimal("1250.00"))
+    data.save_balance(card, date(2026, 8, 1), Decimal("430.25"))        # stale
+    data.close_account(old, date(2026, 9, 30))
+    return {"checking": checking, "card": card, "old": old}
 
 
 @pytest.mark.parametrize("path", [HOME, *PAGES], ids=lambda p: p.stem)
@@ -195,3 +203,79 @@ def test_google_without_allowed_emails_lets_nobody_in(google, monkeypatch):
     google("me@example.com")
     at = new_app(HOME, signed_in=False).run()
     assert "isn't allowed" in at.error[0].value and not opened(at)
+
+
+# ---- accounts ---------------------------------------------------------------
+
+ACCOUNTS = ROOT / "app" / "pages" / "1_Accounts.py"
+
+
+def test_accounts_show_balances_badges_and_closed_ones_apart():
+    seed()
+    at = run(ACCOUNTS)
+    cards = [m.value for m in at.markdown if "**" in m.value]
+    assert cards[0].startswith("**Checking**") and ":gray-badge[Checking]" in cards[0]
+    assert "First Bank · updated 4 days ago" in cards[0]
+    assert ":violet-badge[Liability]" in cards[1] and ":yellow-badge[Update balance]" in cards[1]
+    assert "**Old savings**" in cards[2] and ":gray-badge[Closed]" in cards[2]
+    assert [h.value for h in at.subheader] == ["Open", "Closed", "Edit"]
+    amounts = [m.value for m in at.markdown if m.value.startswith("#### ")]
+    assert amounts == ["#### \\$1,250.00", "#### \\$430.25"]
+
+
+def test_adding_an_account_marks_cards_as_liabilities_and_refuses_a_duplicate_name():
+    at = run(ACCOUNTS)
+    assert not at.text_input                      # the form waits behind its button
+    click(at, "Add an account")
+    widget(at.text_input, "Name").set_value("Amex")
+    widget(at.selectbox, "Type").set_value("credit card")
+    click(at, "Add account")
+    acct = data.accounts().iloc[0]
+    assert (acct["name"], acct["kind"], bool(acct["is_liability"])) == ("Amex", "credit card", True)
+    assert at.success[0].value == "Added Amex."
+    click(at, "Add an account")
+    widget(at.text_input, "Name").set_value("amex")
+    click(at, "Add account")
+    assert at.error[0].value == "There's already an account with that name."
+    assert len(data.accounts()) == 1
+
+
+def test_an_account_with_history_is_closed_not_deleted():
+    ids = seed()
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = ids["checking"]
+    at.run()
+    assert not [b for b in at.button if b.label == "Delete account"]
+    assert any("can't be deleted" in c.value for c in at.caption)
+    click(at, "Close account")
+    assert data.account(ids["checking"])["closed_on"] == TODAY
+    assert at.success[0].value == "Closed Checking."
+    click(at, "Reopen account")
+    assert data.account(ids["checking"])["closed_on"] is None
+
+
+def test_deleting_an_empty_account_needs_the_tick():
+    wallet = data.add_account("Wallet", "cash")
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = wallet
+    at.run()
+    assert widget(at.button, "Delete account").disabled
+    widget(at.checkbox, "I want to delete this account").check().run()
+    click(at, "Delete account")
+    assert data.accounts().empty
+    assert at.success[0].value == "Deleted Wallet."
+
+
+def test_editing_an_account_saves_and_refuses_a_taken_name():
+    ids = seed()
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = ids["card"]
+    at.run()
+    widget(at.text_input, "Name", -1).set_value("checking")
+    click(at, "Save changes")
+    assert at.error[0].value == "There's already an account with that name."
+    widget(at.text_input, "Name", -1).set_value("Chase Visa")
+    widget(at.text_input, "Bank or institution", -1).set_value("Chase")
+    click(at, "Save changes")
+    acct = data.account(ids["card"])
+    assert (acct["name"], acct["institution"]) == ("Chase Visa", "Chase")
