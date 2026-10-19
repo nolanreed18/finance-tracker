@@ -233,6 +233,60 @@ def budget_summary(frame: pd.DataFrame) -> dict[str, Decimal]:
 
 # ---- accounts ---------------------------------------------------------------
 
+def net_worth_now(accounts: pd.DataFrame) -> dict[str, Decimal]:
+    """Assets, liabilities (as a positive number) and net worth from the
+    latest balance of each open account (data.accounts' balance column);
+    accounts with no balance count as nothing."""
+    zero = Decimal("0.00")
+    assets = liabilities = zero
+    for row in accounts.itertuples(index=False):
+        if not blank(row.closed_on):
+            continue
+        amount = to_money(row.balance)
+        if amount is None:
+            continue
+        if row.is_liability:
+            liabilities += amount
+        else:
+            assets += amount
+    return {"assets": assets, "liabilities": liabilities, "net": assets - liabilities}
+
+
+def net_worth_history(balances: pd.DataFrame) -> pd.DataFrame:
+    """Net worth at the end of every month from the first balance to the
+    last: each account's latest balance up to that month end, liabilities
+    negative, counting an account until the month it was closed. Columns:
+    month (first day), assets, liabilities, net_worth."""
+    columns = ["month", "assets", "liabilities", "net_worth"]
+    if balances.empty:
+        return pd.DataFrame(columns=columns)
+    first = month_start(min(balances["as_of"]))
+    last = month_start(max(balances["as_of"]))
+    months = []
+    m = first
+    while m <= last:
+        months.append(m)
+        m = add_months(m, 1)
+    zero = Decimal("0.00")
+    rows = []
+    for m in months:
+        end = add_months(m, 1)
+        latest: dict[int, tuple] = {}
+        for row in balances.itertuples(index=False):
+            if row.as_of >= end:
+                continue
+            closed = value(row.closed_on)
+            if closed is not None and closed < m:
+                continue                      # closed before this month began
+            key = int(row.account_id)
+            if key not in latest or row.as_of >= latest[key][0]:
+                latest[key] = (row.as_of, to_money(row.amount) or zero, bool(row.is_liability))
+        assets = sum((amt for _, amt, owed in latest.values() if not owed), zero)
+        liabilities = sum((amt for _, amt, owed in latest.values() if owed), zero)
+        rows.append((m, assets, liabilities, assets - liabilities))
+    return pd.DataFrame(rows, columns=columns)
+
+
 def stale_balance(as_of, today: date, days: int = config.STALE_BALANCE_DAYS) -> bool:
     """An account whose latest balance is `days` old or more, or that has none,
     is due an update."""

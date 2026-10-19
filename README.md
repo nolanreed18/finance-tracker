@@ -35,6 +35,10 @@ The app is being built one page per pull request. So far:
   and an autopay flag. **Due** from today through 7 days ahead, **Overdue**
   after. **Mark paid** moves the due date on one cadence and, if the box is
   ticked, logs the payment as a transaction. A bill can be paused.
+- **Net worth**: assets minus liabilities from each open account's latest
+  balance; a form that lists every open account with its last balance
+  filled in, to save the month's balances in one go; a line of net worth by
+  month; and a table of assets against liabilities.
 
 Coming next, in this order: Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).

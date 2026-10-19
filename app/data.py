@@ -478,6 +478,31 @@ def save_balance(account_id: int, as_of: date, amount) -> None:
         """, (account_id, as_of, amount))
 
 
+def balances() -> pd.DataFrame:
+    """Every balance ever saved, oldest first, with its account's name,
+    whether it's a liability, and when it was closed: what the net worth
+    history is built from."""
+    return _read("""
+        select b.*, a.name as account, a.is_liability, a.closed_on
+        from balances b join accounts a using (account_id)
+        order by b.as_of, b.balance_id
+    """)
+
+
+def save_balances(entries: list[tuple[int, object]], as_of: date) -> int:
+    """Several accounts' balances on one day, all or nothing; how many were
+    saved. Entries with a blank amount are skipped."""
+    saved = 0
+    with _transaction():
+        for account_id, amount in entries:
+            amount = logic.to_money(amount)
+            if amount is None:
+                continue
+            save_balance(account_id, as_of, amount)
+            saved += 1
+    return saved
+
+
 # ---- settings ---------------------------------------------------------------
 
 def get_setting(key: str, default: str | None = None) -> str | None:

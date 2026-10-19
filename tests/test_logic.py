@@ -221,3 +221,56 @@ def test_monthly_cost_spreads_weekly_and_yearly_bills():
                           {"amount": Decimal("30"), "cadence": "monthly"}])
     assert logic.bills_per_month(frame) == Decimal("92.00")
     assert logic.bills_per_month(frame.iloc[0:0]) == Decimal("0.00")
+
+
+# ---- net worth --------------------------------------------------------------
+
+def accounts_frame(*rows) -> pd.DataFrame:
+    base = {"closed_on": None, "is_liability": False, "balance": None}
+    return pd.DataFrame([{"account_id": n + 1, **base, **r} for n, r in enumerate(rows)])
+
+
+def test_net_worth_now_subtracts_liabilities_and_skips_closed_and_unknown():
+    frame = accounts_frame(
+        {"balance": Decimal("1250.00")},
+        {"balance": Decimal("430.25"), "is_liability": True},
+        {"balance": Decimal("9999"), "closed_on": date(2026, 9, 30)},
+        {"balance": None},
+    )
+    assert logic.net_worth_now(frame) == {"assets": Decimal("1250.00"),
+                                          "liabilities": Decimal("430.25"),
+                                          "net": Decimal("819.75")}
+    assert logic.net_worth_now(frame.iloc[0:0])["net"] == Decimal("0.00")
+
+
+def balances_frame(*rows) -> pd.DataFrame:
+    base = {"is_liability": False, "closed_on": None}
+    return pd.DataFrame([{**base, **r} for r in rows],
+                        columns=["account_id", "as_of", "amount", "is_liability", "closed_on"])
+
+
+def test_net_worth_history_carries_each_balance_forward_by_month():
+    frame = balances_frame(
+        {"account_id": 1, "as_of": date(2026, 7, 15), "amount": Decimal("1000")},
+        {"account_id": 2, "as_of": date(2026, 8, 3), "amount": Decimal("300"),
+         "is_liability": True},
+        {"account_id": 1, "as_of": date(2026, 9, 1), "amount": Decimal("1200")},
+        {"account_id": 1, "as_of": date(2026, 9, 20), "amount": Decimal("1100")},   # latest wins
+    )
+    history = logic.net_worth_history(frame)
+    assert history["month"].tolist() == [date(2026, 7, 1), date(2026, 8, 1), date(2026, 9, 1)]
+    assert history["net_worth"].tolist() == [Decimal("1000.00"), Decimal("700.00"),
+                                             Decimal("800.00")]
+    assert history["liabilities"].tolist() == [Decimal("0.00"), Decimal("300.00"),
+                                               Decimal("300.00")]
+
+
+def test_a_closed_account_counts_until_the_month_it_closed():
+    frame = balances_frame(
+        {"account_id": 1, "as_of": date(2026, 7, 1), "amount": Decimal("500"),
+         "closed_on": date(2026, 8, 10)},
+        {"account_id": 2, "as_of": date(2026, 9, 5), "amount": Decimal("50")},
+    )
+    assert logic.net_worth_history(frame)["net_worth"].tolist() == [
+        Decimal("500.00"), Decimal("500.00"), Decimal("50.00")]
+    assert logic.net_worth_history(frame.iloc[0:0]).empty
