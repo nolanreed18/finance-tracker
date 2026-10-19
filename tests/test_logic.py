@@ -112,3 +112,41 @@ def test_balance_age_text():
     assert logic.balance_age(date(2026, 9, 2), TODAY) == "updated Sep 2"
     assert logic.balance_age(date(2025, 12, 2), TODAY) == "updated Dec 2, 2025"
     assert logic.balance_age(None, TODAY) == "no balance yet"
+
+
+# ---- transactions -----------------------------------------------------------
+
+def test_the_kind_decides_the_sign():
+    assert logic.signed("42.10", "expense") == Decimal("-42.10")
+    assert logic.signed(-42.10, "expense") == Decimal("-42.10")
+    assert logic.signed("-500", "income") == Decimal("500.00")
+    assert logic.signed(-200, "transfer") == Decimal("-200.00")
+    assert logic.signed(200, "transfer") == Decimal("200.00")
+    assert logic.signed(None, "expense") == Decimal("0.00")
+
+
+def test_totals_keep_income_spending_and_transfers_apart():
+    frame = pd.DataFrame([
+        {"amount": Decimal("1000.00"), "kind": "income"},
+        {"amount": Decimal("-42.10"), "kind": "expense"},
+        {"amount": Decimal("-7.90"), "kind": "expense"},
+        {"amount": Decimal("-200.00"), "kind": "transfer"},
+    ])
+    assert logic.totals(frame) == {"income": Decimal("1000.00"), "spending": Decimal("50.00"),
+                                   "transfers": Decimal("-200.00"), "net": Decimal("950.00")}
+    assert logic.totals(frame.iloc[0:0]) == {k: Decimal("0.00")
+                                             for k in ("income", "spending", "transfers", "net")}
+
+
+def test_month_labels_and_recent_months():
+    assert logic.month_label(date(2026, 10, 1)) == "October 2026"
+    assert logic.recent_months(TODAY, 3) == [date(2026, 10, 1), date(2026, 9, 1),
+                                             date(2026, 8, 1)]
+    assert logic.recent_months(date(2026, 1, 20), 2) == [date(2026, 1, 1), date(2025, 12, 1)]
+
+
+def test_the_pick_one_label_names_the_payee_or_the_account():
+    assert logic.transaction_label(date(2026, 10, 12), "Grocer", Decimal("-42.10"),
+                                   "Checking") == "Oct 12 · Grocer · −$42.10 · Checking"
+    assert logic.transaction_label(date(2026, 10, 12), None, Decimal("1000"),
+                                   "Checking") == "Oct 12 · Checking · $1,000.00"
