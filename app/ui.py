@@ -15,7 +15,10 @@ import theme
 ATTENTION_BADGES = {
     "overdue": ("red", "Overdue"), "due": ("orange", "Due"), "over": ("red", "Over budget"),
     "close": ("orange", "Close to budget"), "stale": ("yellow", "Update balance"),
+    "relink": ("red", "Sign in again"),
 }
+SYNC_BADGES = {"error": ("red", "Sync failed"), "fresh": ("green", "Synced"),
+               "stale": ("orange", "Not synced lately"), "never": ("gray", "Never synced")}
 KIND_COLORS = {"income": "green", "expense": "gray", "transfer": "blue"}
 
 # Characters Streamlit markdown would treat as formatting. `$` matters most:
@@ -242,6 +245,11 @@ def badge(color: str, text: str) -> str:
 
 def attention_badge(kind: str) -> str:
     color, text = ATTENTION_BADGES.get(kind, ("gray", kind.replace("_", " ").capitalize()))
+    return badge(color, text)
+
+
+def sync_badge(state: str) -> str:
+    color, text = SYNC_BADGES.get(state, ("gray", state.capitalize()))
     return badge(color, text)
 
 

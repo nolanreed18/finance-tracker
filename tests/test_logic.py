@@ -549,3 +549,56 @@ def test_positive_rows_on_a_checking_account_are_income():
     assert logic.import_kind(Decimal("5"), False, "payment") == "income"
     assert logic.import_kind(Decimal("5"), True, None, "Payment", None) == "transfer"
     assert logic.import_kind(Decimal("5"), True, "Refund", "Return", "Shopping") == "expense"
+
+
+# ---- connected banks --------------------------------------------------------
+
+def test_our_account_kind_for_a_bank_account():
+    assert logic.account_kind_for("depository", "checking") == ("checking", False)
+    assert logic.account_kind_for("depository", "savings") == ("savings", False)
+    assert logic.account_kind_for("credit", "credit card") == ("credit card", True)
+    assert logic.account_kind_for("loan", "mortgage") == ("loan", True)
+    assert logic.account_kind_for("investment", "401k") == ("retirement", False)
+    assert logic.account_kind_for("investment", "brokerage") == ("brokerage", False)
+    assert logic.account_kind_for("other", None) == ("other", False)
+
+
+def test_suggesting_one_of_our_accounts_for_a_bank_account():
+    ours = pd.DataFrame([
+        {"account_id": 1, "name": "Chase checking", "closed_on": None},
+        {"account_id": 2, "name": "Visa 0002", "closed_on": None},
+        {"account_id": 3, "name": "Freedom card", "closed_on": date(2026, 1, 1)},
+    ])
+    assert logic.suggest_account("Total Checking", "0001", ours) is None     # "checking" is generic
+    assert logic.suggest_account("Chase Sapphire", "0009", ours) == 1
+    assert logic.suggest_account("Freedom Unlimited", "0002", ours) == 2       # the mask wins
+    assert logic.suggest_account("Freedom Unlimited", "0007", ours) is None   # closed: skipped
+    assert logic.suggest_account("Card", None, ours.iloc[0:0]) is None
+
+
+def test_sync_problem_text_and_badge_state():
+    assert logic.sync_problem("ITEM_LOGIN_REQUIRED: Please sign in to your bank again.") \
+        == "The bank wants you to sign in again."
+    assert logic.sync_problem("INSTITUTION_DOWN: x").startswith("The bank's connection is down")
+    assert logic.sync_problem("couldn't reach Plaid: timeout") == "couldn't reach Plaid: timeout"
+    assert logic.sync_badge_state(TODAY, None, TODAY) == "fresh"
+    assert logic.sync_badge_state(date(2026, 10, 13), None, TODAY) == "fresh"
+    assert logic.sync_badge_state(date(2026, 10, 10), None, TODAY) == "stale"
+    assert logic.sync_badge_state(None, None, TODAY) == "never"
+    assert logic.sync_badge_state(TODAY, "ITEM_LOGIN_REQUIRED: x", TODAY) == "error"
+
+
+def test_a_bank_that_needs_a_new_sign_in_comes_first_on_home():
+    connections = pd.DataFrame([
+        {"institution_name": "Chase", "last_error": "ITEM_LOGIN_REQUIRED: x",
+         "last_synced_on": date(2026, 10, 1)},
+        {"institution_name": "Amex", "last_error": None, "last_synced_on": TODAY},
+    ])
+    bills = pd.DataFrame([{"name": "Rent", "amount": Decimal("1"), "next_due_on": TODAY,
+                           "active": True}])
+    empty_frame = pd.DataFrame(columns=["name", "budgeted", "spent", "closed_on", "balance_on"])
+    items = logic.needs_attention(bills, empty_frame, empty_frame, TODAY, connections)
+    assert [(i.kind, i.headline, i.detail, i.page) for i in items] == [
+        ("relink", "Chase", "The bank wants you to sign in again.", "pages/1_Accounts.py"),
+        ("due", "Rent", "$1.00 · due today", "pages/4_Bills.py"),
+    ]

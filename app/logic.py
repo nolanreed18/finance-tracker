@@ -45,15 +45,23 @@ class Attention:
     on: date             # for ordering within a kind
 
 
-ORDER = {"overdue": 0, "due": 1, "over": 2, "close": 3, "stale": 4}
+ORDER = {"relink": 0, "overdue": 1, "due": 2, "over": 3, "close": 4, "stale": 5}
 
 
 def needs_attention(bills: pd.DataFrame, budgets: pd.DataFrame, accounts: pd.DataFrame,
-                    today: date) -> list[Attention]:
-    """What to do next, most urgent first: active bills overdue or due within
-    the lookahead, this month's budget categories over or close to their
-    amount, and open accounts whose balance is stale."""
+                    today: date, connections: pd.DataFrame | None = None) -> list[Attention]:
+    """What to do next, most urgent first: a linked bank whose sync failed
+    (usually it wants you to sign in again), active bills overdue or due
+    within the lookahead, this month's budget categories over or close to
+    their amount, and open accounts whose balance is stale."""
     items: list[Attention] = []
+    if connections is not None:
+        for row in connections.itertuples(index=False):
+            if blank(row.last_error):
+                continue
+            items.append(Attention("relink", value(row.institution_name) or "A linked bank",
+                                   sync_problem(row.last_error), "pages/1_Accounts.py",
+                                   value(row.last_synced_on) or date.min))
     for row in bills.itertuples(index=False):
         if not row.active:
             continue
@@ -771,3 +779,80 @@ def plaid_balance(account: dict) -> Decimal | None:
         if balances.get(key) is not None:
             return to_money(balances[key])
     return None
+
+
+# Our account type (and whether it's money owed) for a bank account as Plaid
+# describes it: its type (depository, credit, loan, investment) and subtype.
+PLAID_KINDS = {
+    "checking": "checking", "savings": "savings", "money market": "savings", "cd": "savings",
+    "credit card": "credit card", "paypal": "credit card",
+    "401k": "retirement", "401a": "retirement", "403b": "retirement", "457b": "retirement",
+    "ira": "retirement", "roth": "retirement", "roth 401k": "retirement", "sep ira": "retirement",
+    "simple ira": "retirement", "pension": "retirement", "brokerage": "brokerage",
+    "cash management": "checking", "prepaid": "cash",
+}
+
+
+def account_kind_for(plaid_type, subtype) -> tuple[str, bool]:
+    """(kind, is_liability) for a bank account: by subtype when we know it,
+    else by type (credit and loan are owed; investment is brokerage)."""
+    sub = str(subtype or "").strip().lower()
+    typ = str(plaid_type or "").strip().lower()
+    if sub in PLAID_KINDS:
+        kind = PLAID_KINDS[sub]
+    elif typ == "credit":
+        kind = "credit card"
+    elif typ == "loan":
+        kind = "loan"
+    elif typ == "investment":
+        kind = "brokerage"
+    elif typ == "depository":
+        kind = "checking"
+    else:
+        kind = "other"
+    return kind, typ in ("credit", "loan") or kind in config.LIABILITY_TYPES
+
+
+def suggest_account(bank_name, mask, accounts: pd.DataFrame) -> int | None:
+    """Which of our open accounts a bank account probably is: one whose name
+    contains the bank's last four digits, or shares a word with the bank's
+    name that isn't generic. None when nothing stands out."""
+    if accounts.empty:
+        return None
+    open_accounts = accounts[accounts["closed_on"].isna()] if "closed_on" in accounts else accounts
+    mask = str(mask or "").strip()
+    if mask:
+        for row in open_accounts.itertuples(index=False):
+            if mask in str(row.name):
+                return int(row.account_id)
+    generic = {"account", "card", "credit", "checking", "savings", "bank", "the", "of", "total",
+               "plus", "preferred", "rewards", "cash", "online", "my", "and"}
+    bank_words = set(words(bank_name).split()) - generic
+    if not bank_words:
+        return None
+    for row in open_accounts.itertuples(index=False):
+        ours = set(words(row.name).split()) - generic
+        if ours & bank_words:
+            return int(row.account_id)
+    return None
+
+
+def sync_problem(last_error) -> str:
+    """A plain sentence for a connection's last error."""
+    text = str(last_error or "")
+    if "ITEM_LOGIN_REQUIRED" in text or "LOGIN" in text.upper():
+        return "The bank wants you to sign in again."
+    if "INSTITUTION" in text.upper():
+        return "The bank's connection is down for now; the next sync will retry."
+    return re.sub(r"^[A-Z_]+: ", "", text) or "The last sync failed."
+
+
+def sync_badge_state(last_synced_on, last_error, today: date) -> str:
+    """'error' (sync failed), 'fresh' (synced today or yesterday), 'stale'
+    (older), 'never'."""
+    if not blank(last_error):
+        return "error"
+    last = value(last_synced_on)
+    if last is None:
+        return "never"
+    return "fresh" if (today - last).days <= 1 else "stale"

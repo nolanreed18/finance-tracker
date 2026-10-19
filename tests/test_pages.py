@@ -259,7 +259,8 @@ def test_accounts_show_balances_badges_and_closed_ones_apart():
     assert "First Bank · updated 4 days ago" in cards[0]
     assert ":violet-badge[Liability]" in cards[1] and ":yellow-badge[Update balance]" in cards[1]
     assert "**Old savings**" in cards[2] and ":gray-badge[Closed]" in cards[2]
-    assert [h.value for h in at.subheader] == ["Open", "Closed", "Edit"]
+    assert [h.value for h in at.subheader] == ["Open", "Closed", "Connected banks", "Edit"]
+    assert any("Bank sync isn't set up yet" in c.value for c in at.caption)
     amounts = [m.value for m in at.markdown if m.value.startswith("#### ")]
     assert amounts == ["#### \\$1,250.00", "#### \\$430.25"]
 
@@ -698,3 +699,116 @@ def test_a_card_file_with_positive_charges_is_flipped_for_you():
                                                                              "expense")
     assert (rows.loc["INTERNET PAYMENT - THANK YOU", "amount"],
             rows.loc["INTERNET PAYMENT - THANK YOU", "kind"]) == (Decimal("250.00"), "transfer")
+
+
+# ---- connected banks --------------------------------------------------------
+
+@pytest.fixture
+def bank(monkeypatch):
+    """Plaid faked as the Accounts page uses it: one bank with two accounts."""
+    import plaid_api
+    monkeypatch.setenv("PLAID_CLIENT_ID", "id")
+    monkeypatch.setenv("PLAID_SECRET", "secret")
+    state = {"results": [], "removed": [], "synced": [], "fail_sync": False}
+    monkeypatch.setattr(plaid_api, "create_link",
+                        lambda user, access_token=None: {"link_token": "lt",
+                                                         "hosted_link_url": "https://plaid/x"})
+    monkeypatch.setattr(plaid_api, "link_results", lambda token: state["results"])
+    monkeypatch.setattr(plaid_api, "exchange",
+                        lambda public: {"access_token": "acc-1", "item_id": "item-1"})
+    monkeypatch.setattr(plaid_api, "accounts", lambda token: [
+        {"provider_account_id": "pa-chk", "name": "Total Checking", "mask": "0001",
+         "kind": "depository", "subtype": "checking", "balances": {"current": 1300.0}},
+        {"provider_account_id": "pa-card", "name": "Freedom Unlimited", "mask": "0002",
+         "kind": "credit", "subtype": "credit card", "balances": {"current": 99.0}},
+    ])
+    monkeypatch.setattr(plaid_api, "remove", lambda token: state["removed"].append(token))
+
+    def transactions_sync(token, cursor):
+        state["synced"].append(cursor)
+        if state["fail_sync"]:
+            raise plaid_api.PlaidError("ITEM_LOGIN_REQUIRED", "Please sign in to your bank again.")
+        return {"added": [{"transaction_id": "t1", "account_id": "pa-card", "amount": 4.5,
+                           "date": "2026-10-12", "name": "CAFE #12", "pending": False,
+                           "personal_finance_category": {"primary": "FOOD_AND_DRINK",
+                                                         "detailed": "FOOD_AND_DRINK_COFFEE"}}],
+                "modified": [], "removed": [], "next_cursor": "c1"}
+    monkeypatch.setattr(plaid_api, "transactions_sync", transactions_sync)
+    return state
+
+
+def test_connecting_a_bank_then_matching_its_accounts(bank):
+    ids = seed()
+    at = run(ACCOUNTS)
+    assert "No banks connected" in html(at)
+    click(at, "Connect a bank")
+    assert [b.label for b in at.get("link_button")] == ["Open the sign-in"]
+    click(at, "I've finished")                              # the bank hasn't answered yet
+    assert "hasn't heard from your bank yet" in at.warning[0].value
+    bank["results"] = [{"public_token": "pub", "institution_name": "Chase",
+                        "institution_id": "ins_3"}]
+    click(at, "I've finished")
+    assert at.success[0].value.startswith("Linked Chase.")
+    assert data.connections().iloc[0]["institution_name"] == "Chase"
+    # The matching form suggests our Visa for the card (same word) and a new
+    # account for the checking one, whose name is generic.
+    assert widget(at.selectbox, "Total Checking ····0001").value == -1
+    assert widget(at.selectbox, "Freedom Unlimited ····0002").value == -1
+    widget(at.selectbox, "Freedom Unlimited ····0002").set_value(ids["card"])
+    click(at, "Save matches")
+    assert at.success[0].value == ("Matches saved. Created Total Checking. Press Sync now to pull "
+                                   "the history.")
+    created = data.accounts().set_index("name").loc["Total Checking"]
+    assert (created["kind"], bool(created["is_liability"]), created["institution"]) == (
+        "checking", False, "Chase")
+    matched = data.connected_accounts().set_index("provider_account_id")
+    assert matched.loc["pa-card", "account_id"] == ids["card"]
+    assert matched.loc["pa-chk", "account_id"] == created["account_id"]
+    click(at, "Sync now")
+    assert at.success[0].value == "Synced Chase: 1 new, 2 balances updated."
+    assert data.transactions(account_id=ids["card"]).iloc[0]["import_key"] == "plaid:t1"
+    assert data.account(ids["card"])["balance"] == Decimal("99.00")
+    assert any(":green-badge[Synced]" in m.value for m in at.markdown)
+
+
+def test_a_failed_sync_shows_on_the_bank_and_on_home_and_can_be_repaired(bank):
+    seed()
+    conn = data.add_connection("item-1", "acc-1", TODAY, institution_name="Chase")
+    bank["fail_sync"] = True
+    at = run(ACCOUNTS)
+    click(at, "Sync now")
+    assert at.success[0].value == "Sync failed: The bank wants you to sign in again."
+    assert any(":red-badge[Sync failed]" in m.value for m in at.markdown)
+    home = run(HOME)
+    lines = [m.value for m in home.markdown if "**" in m.value]
+    assert lines[0].startswith(":red-badge[Sign in again] **Chase**")
+    bank["fail_sync"] = False
+    click(at, "Sign in again")
+    click(at, "I've finished")
+    assert at.success[0].value == "Signed in again; the bank is syncing."
+    assert data.connection(conn)["last_error"] is None and data.connection(conn)["cursor"] == "c1"
+
+
+def test_removing_a_bank_needs_the_tick_and_tells_plaid(bank):
+    ids = seed()
+    data.add_connection("item-1", "acc-1", TODAY, institution_name="Chase")
+    at = run(ACCOUNTS)
+    assert widget(at.button, "Delete bank connection").disabled
+    widget(at.checkbox, "I want to delete this bank connection").check().run()
+    click(at, "Delete bank connection")
+    assert bank["removed"] == ["acc-1"] and data.connections().empty
+    assert len(data.accounts()) == 3 and ids["card"] in data.accounts()["account_id"].tolist()
+
+
+def test_import_warns_about_an_account_a_bank_feeds(bank):
+    ids = seed()
+    conn = data.add_connection("item-1", "acc-1", TODAY, institution_name="Chase")
+    data.save_connected_accounts(conn, [{"provider_account_id": "pa-chk", "name": "Checking",
+                                         "mask": "0001", "kind": "depository",
+                                         "subtype": "checking"}])
+    ca = int(data.connected_accounts(conn).iloc[0]["connected_account_id"])
+    data.match_connected_account(ca, ids["checking"])
+    at = run(IMPORT)
+    assert "is fed by a connected bank" in at.info[0].value
+    widget(at.selectbox, "Account the file belongs to").set_value(ids["card"]).run()
+    assert not at.info

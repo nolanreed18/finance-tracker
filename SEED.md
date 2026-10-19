@@ -23,7 +23,14 @@ transactions can be edited or deleted.
    **Autopay** for the ones that pay themselves. When one goes out, press
    **Mark paid**: the date moves on and, with the box ticked, the payment is
    logged as a transaction.
-5. **Transactions.** Two ways to fill them:
+5. **Transactions.** Three ways to fill them:
+   - **Connect a bank** (set-and-forget): on the Accounts page, under
+     Connected banks, press **Connect a bank**, sign in at the bank in the
+     tab that opens, come back and press **I've finished**. Match each
+     bank account to one of yours (or let it create one), save, then
+     **Sync now** for up to two years of history. From then on new
+     transactions and balances arrive every morning. Needs the Plaid
+     secrets set up first (README → Bank sync).
    - **Import** (fastest): on your bank's or card's website, export the
      last month or two as a CSV, then on the Import page pick the account,
      drop the file in, check the preview and press **Import**. If a card
