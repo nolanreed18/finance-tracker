@@ -384,3 +384,18 @@ def test_deleting_an_account_or_category_leaves_the_bill():
     gym = data.add_bill("Gym", "30", "monthly", TODAY, account_id=wallet, category_id=fun)
     data.delete_account(wallet)
     assert data.bill(gym)["account_id"] is None
+
+
+# ---- balances ---------------------------------------------------------------
+
+def test_saving_several_balances_at_once_is_all_or_nothing():
+    checking = data.add_account("Checking", "checking")
+    card = data.add_account("Visa", "credit card", is_liability=True)
+    assert data.save_balances([(checking, 1250.0), (card, None), (card, "430.25")], TODAY) == 2
+    rows = data.balances()
+    assert rows[["account", "amount"]].values.tolist() == [["Checking", Decimal("1250.00")],
+                                                           ["Visa", Decimal("430.25")]]
+    assert bool(rows.iloc[1]["is_liability"]) and logic.blank(rows.iloc[1]["closed_on"])
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        data.save_balances([(checking, 1), (999, 1)], date(2026, 10, 15))
+    assert len(data.balances()) == 2                             # nothing from the failed run

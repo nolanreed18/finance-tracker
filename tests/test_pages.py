@@ -72,6 +72,7 @@ def seed() -> dict[str, int]:
     old = data.add_account("Old savings", "savings")
     data.save_balance(checking, date(2026, 10, 10), Decimal("1250.00"))
     data.save_balance(card, date(2026, 8, 1), Decimal("430.25"))        # stale
+    data.save_balance(checking, date(2026, 8, 20), Decimal("900.00"))
     data.close_account(old, date(2026, 9, 30))
     food = data.add_category("Food", "expense")
     pay = data.add_category("Pay", "income")
@@ -499,3 +500,41 @@ def test_deleting_a_bill_needs_the_tick():
     widget(at.checkbox, "I want to delete this bill").check().run()
     click(at, "Delete bill")
     assert data.bill(ids["phone"]) is None
+
+
+# ---- net worth --------------------------------------------------------------
+
+NET_WORTH = ROOT / "app" / "pages" / "5_Net_worth.py"
+
+
+def test_net_worth_shows_the_numbers_the_chart_and_the_table():
+    seed()
+    at = run(NET_WORTH)
+    assert [m.value for m in at.metric] == ["$819.75", "$1,250.00", "$430.25"]
+    chart = at.get("vega_lite_chart")
+    assert len(chart) == 1
+    assert len(at.dataframe[0].value) == 2                   # the closed account is left out
+    assert any(":yellow-badge[Update balance]" in m.value and "Visa" in m.value
+               for m in at.markdown)
+
+
+def test_net_worth_without_balances_asks_for_them():
+    data.add_account("Checking", "checking")
+    at = run(NET_WORTH)
+    assert [m.value for m in at.metric] == ["$0.00", "$0.00", "$0.00"]
+    assert "No balances yet" in html(at) and not at.dataframe
+
+
+def test_updating_balances_saves_every_open_account_at_once():
+    ids = seed()
+    at = run(NET_WORTH)
+    click(at, "Update balances")
+    inputs = {n.label: n.value for n in at.number_input}
+    assert inputs == {"Checking": 1250.0, "Visa (owed)": 430.25}
+    widget(at.number_input, "Visa (owed)").set_value(400.0)
+    click(at, "Save balances")
+    assert data.account(ids["card"])["balance"] == Decimal("400.00")
+    assert data.account(ids["card"])["balance_on"] == TODAY
+    assert data.account(ids["checking"])["balance_on"] == TODAY      # prefilled, saved too
+    assert at.success[0].value == "Saved 2 balances as of today."
+    assert [m.value for m in at.metric] == ["$850.00", "$1,250.00", "$400.00"]
