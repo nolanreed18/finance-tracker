@@ -245,6 +245,20 @@ def attention_badge(kind: str) -> str:
     return badge(color, text)
 
 
+def account_badges(kind: str, is_liability: bool, closed: bool, stale: bool) -> str:
+    """The badges after an account's name: its type (grey), Liability (violet:
+    a category of its own), Closed (grey), and Update balance (yellow) when
+    its balance is stale and it's still open."""
+    parts = [badge("gray", kind.capitalize())]
+    if is_liability:
+        parts.append(badge("violet", "Liability"))
+    if closed:
+        parts.append(badge("gray", "Closed"))
+    elif stale:
+        parts.append(attention_badge("stale"))
+    return " ".join(parts)
+
+
 def kind_badge(kind: str) -> str:
     """A transaction kind: income green, expense grey, transfer blue."""
     return badge(KIND_COLORS.get(kind, "gray"), kind.capitalize())

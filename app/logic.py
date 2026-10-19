@@ -11,6 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import pandas as pd
 
+import config
+
 CENT = Decimal("0.01")
 
 
@@ -90,6 +92,28 @@ def money(n) -> str:
 def percent(share) -> str:
     """'42%' for 0.42; '—' when there is no share to show."""
     return "—" if share is None else f"{share:.0%}"
+
+
+# ---- accounts ---------------------------------------------------------------
+
+def stale_balance(as_of, today: date, days: int = config.STALE_BALANCE_DAYS) -> bool:
+    """An account whose latest balance is `days` old or more, or that has none,
+    is due an update."""
+    as_of = value(as_of)
+    return as_of is None or (today - as_of).days >= days
+
+
+def balance_age(as_of, today: date) -> str:
+    """'updated today', 'updated 3 days ago', 'updated Sep 2', or 'no balance yet'."""
+    as_of = value(as_of)
+    if as_of is None:
+        return "no balance yet"
+    days = (today - as_of).days
+    if days <= 0:
+        return "updated today"
+    if days < 14:
+        return f"updated {plural(days, 'day')} ago"
+    return f"updated {as_of:%b} {as_of.day}" + ("" if as_of.year == today.year else f", {as_of.year}")
 
 
 # ---- formatting -------------------------------------------------------------

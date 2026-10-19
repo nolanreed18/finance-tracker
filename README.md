@@ -14,8 +14,13 @@ The app is being built one page per pull request. So far:
   savings rate) and flags bills due in the next 7 days or overdue, budget
   categories over 90% for the month, and accounts with no balance update
   for 30 days.
+- **Accounts**: every place your money lives or is owed (checking, savings,
+  credit card, brokerage, retirement, loan, cash, other), with its bank,
+  latest balance and when that was taken. Cards and loans are liabilities,
+  which net worth subtracts. An account with history is **closed**, never
+  deleted (and can be reopened); only an empty one can be deleted.
 
-Coming next, in this order: Accounts, Transactions, Budgets, Bills, Net
+Coming next, in this order: Transactions, Budgets, Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
 
 Settings you might want to change (the 7-day bill window, the 90% budget

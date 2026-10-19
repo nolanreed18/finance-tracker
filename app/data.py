@@ -194,6 +194,76 @@ def _delete(table: str, key: str, key_value: int, in_use_message: str = "") -> N
         raise InUse(in_use_message or "other records still use this one") from exc
 
 
+# ---- accounts ---------------------------------------------------------------
+
+ACCOUNT_FIELDS = {"name", "kind", "institution", "is_liability", "opened_on", "closed_on",
+                  "notes"}
+
+_ACCOUNTS = """
+    select a.*, b.amount as balance, b.as_of as balance_on,
+           (select count(*) from transactions t where t.account_id = a.account_id)
+               as transactions,
+           (select count(*) from balances x where x.account_id = a.account_id) as balances
+    from accounts a
+    left join lateral (select amount, as_of from balances b
+                       where b.account_id = a.account_id
+                       order by as_of desc limit 1) b on true
+"""
+
+
+def accounts() -> pd.DataFrame:
+    """Every account, open ones first then by name, with its latest balance
+    (and the day it was taken) and how many transactions and balances it has."""
+    return _read(_ACCOUNTS + " order by a.closed_on is not null, lower(a.name)")
+
+
+def open_accounts() -> pd.DataFrame:
+    return _read(_ACCOUNTS + " where a.closed_on is null order by lower(a.name)")
+
+
+def account(account_id: int) -> dict | None:
+    return _one(_ACCOUNTS + " where a.account_id = %s", (account_id,))
+
+
+def add_account(name: str, kind: str, **fields) -> int:
+    unknown = set(fields) - ACCOUNT_FIELDS
+    if unknown:
+        raise ValueError(f"unknown account fields {sorted(unknown)}")
+    return _insert("accounts", "account_id", {"name": name, "kind": kind, **fields})
+
+
+def update_account(account_id: int, **fields) -> None:
+    _update("accounts", "account_id", account_id, fields, ACCOUNT_FIELDS)
+
+
+def close_account(account_id: int, on: date) -> None:
+    """Closed accounts keep their history and drop out of pickers and net worth."""
+    _update("accounts", "account_id", account_id, {"closed_on": on}, ACCOUNT_FIELDS)
+
+
+def reopen_account(account_id: int) -> None:
+    _update("accounts", "account_id", account_id, {"closed_on": None}, ACCOUNT_FIELDS)
+
+
+def delete_account(account_id: int) -> None:
+    """Only an account with no transactions and no balances; close the others."""
+    _delete("accounts", "account_id", account_id,
+            "this account has transactions or balances; close it instead")
+
+
+# ---- balances ---------------------------------------------------------------
+
+def save_balance(account_id: int, as_of: date, amount) -> None:
+    """An account's balance on a day, as the bank shows it (what's owed on a
+    card or loan is positive); a second entry for the same day replaces the
+    first."""
+    with _cursor() as cur:
+        cur.execute("""
+            insert into balances (account_id, as_of, amount) values (%s, %s, %s)
+            on conflict (account_id, as_of) do update set amount = excluded.amount
+        """, (account_id, as_of, amount))
+
+
 # ---- settings ---------------------------------------------------------------
 
 def get_setting(key: str, default: str | None = None) -> str | None:
