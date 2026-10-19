@@ -296,11 +296,15 @@ _TRANSACTIONS = """
 
 
 def transactions(month: date | None = None, account_id: int | None = None,
-                 category_id: int | None = None, search: str | None = None) -> pd.DataFrame:
+                 category_id: int | None = None, search: str | None = None,
+                 since: date | None = None) -> pd.DataFrame:
     """Transactions newest first, with account and category names, narrowed
-    by any of: a month (its first day), an account, a category, and text in
-    the payee or notes."""
+    by any of: a month (its first day), an account, a category, text in the
+    payee or notes, and a first date (for the stats)."""
     where, params = [], {}
+    if since is not None:
+        where.append("t.happened_on >= %(since)s")
+        params["since"] = since
     if month is not None:
         where.append("t.happened_on >= %(start)s and t.happened_on < %(end)s")
         params.update(start=month, end=logic.add_months(month, 1))

@@ -272,6 +272,91 @@ def budget_summary(frame: pd.DataFrame) -> dict[str, Decimal]:
     return {"budgeted": budgeted, "spent": spent, "left": budgeted - spent_budgeted}
 
 
+# ---- stats ------------------------------------------------------------------
+
+UNCATEGORISED = "(uncategorised)"
+
+
+def savings_rate(income, spending) -> Decimal | None:
+    """(income - spending) / income, or None when there's no income."""
+    income, spending = to_money(income) or Decimal("0"), to_money(spending) or Decimal("0")
+    if income <= 0:
+        return None
+    return ((income - spending) / income).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def in_month(frame: pd.DataFrame, month: date) -> pd.DataFrame:
+    """The transactions dated in a month (its first day)."""
+    if frame.empty:
+        return frame
+    end = add_months(month, 1)
+    return frame[(frame["happened_on"] >= month) & (frame["happened_on"] < end)]
+
+
+def spending_by_category(frame: pd.DataFrame) -> pd.DataFrame:
+    """Expense totals per category over a frame of transactions, as positive
+    numbers, biggest first; uncategorised spending is one row of its own.
+    Columns: category, spent."""
+    columns = ["category", "spent"]
+    expenses = frame[frame["kind"] == "expense"] if not frame.empty else frame
+    if expenses.empty:
+        return pd.DataFrame(columns=columns)
+    sums: dict[str, Decimal] = {}
+    for row in expenses.itertuples(index=False):
+        name = value(row.category) or UNCATEGORISED
+        sums[name] = sums.get(name, Decimal("0.00")) - (to_money(row.amount) or Decimal("0"))
+    rows = sorted(sums.items(), key=lambda kv: (-kv[1], kv[0]))
+    return pd.DataFrame(rows, columns=columns)
+
+
+def category_by_month(frame: pd.DataFrame, months: list[date]) -> pd.DataFrame:
+    """Spending per category (rows) for each month (columns, labelled "Oct
+    2026"), with a Total column, biggest total first. Empty when nothing was
+    spent in those months."""
+    labels = [f"{m:%b %Y}" for m in months]
+    table: dict[str, dict[str, Decimal]] = {}
+    for m, label in zip(months, labels):
+        for row in spending_by_category(in_month(frame, m)).itertuples(index=False):
+            table.setdefault(row.category, {})[label] = row.spent
+    if not table:
+        return pd.DataFrame(columns=["category", *labels, "Total"])
+    zero = Decimal("0.00")
+    rows = [{"category": name, **{label: cells.get(label, zero) for label in labels},
+             "Total": sum(cells.values(), zero)} for name, cells in table.items()]
+    rows.sort(key=lambda r: (-r["Total"], r["category"]))
+    return pd.DataFrame(rows, columns=["category", *labels, "Total"])
+
+
+def monthly_flows(frame: pd.DataFrame, months: list[date]) -> pd.DataFrame:
+    """Income, spending, net and savings rate for each month given (oldest
+    first), zeros for quiet months. Columns: month, income, spending, net,
+    savings_rate (None when no income)."""
+    rows = []
+    for m in sorted(months):
+        sums = totals(in_month(frame, m))
+        rows.append((m, sums["income"], sums["spending"], sums["net"],
+                     savings_rate(sums["income"], sums["spending"])))
+    return pd.DataFrame(rows, columns=["month", "income", "spending", "net", "savings_rate"])
+
+
+def top_payees(frame: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
+    """Where the spending went: payees by total spent (positive), biggest
+    first, with how many transactions each. Columns: payee, spent, count."""
+    columns = ["payee", "spent", "count"]
+    expenses = frame[frame["kind"] == "expense"] if not frame.empty else frame
+    if expenses.empty:
+        return pd.DataFrame(columns=columns)
+    sums: dict[str, list] = {}
+    for row in expenses.itertuples(index=False):
+        name = value(row.payee) or "(no payee)"
+        entry = sums.setdefault(name, [Decimal("0.00"), 0])
+        entry[0] -= to_money(row.amount) or Decimal("0")
+        entry[1] += 1
+    rows = sorted(((name, spent, count) for name, (spent, count) in sums.items()),
+                  key=lambda r: (-r[1], r[0]))[:limit]
+    return pd.DataFrame(rows, columns=columns)
+
+
 # ---- accounts ---------------------------------------------------------------
 
 def net_worth_now(accounts: pd.DataFrame) -> dict[str, Decimal]:

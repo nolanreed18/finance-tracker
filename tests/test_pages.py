@@ -585,3 +585,30 @@ def test_deleting_a_goal_needs_the_tick():
     widget(at.checkbox, "I want to delete this goal").check().run()
     click(at, "Delete goal")
     assert data.goal(ids["trip"]) is None
+
+
+# ---- stats ------------------------------------------------------------------
+
+STATS = ROOT / "app" / "pages" / "7_Stats.py"
+
+
+def test_stats_draw_the_month_the_year_and_the_payees():
+    seed()
+    at = run(STATS)
+    assert [h.value for h in at.subheader] == ["Spending by category",
+                                               "Income and spending, 12 months",
+                                               "Savings rate", "Top payees"]
+    assert len(at.get("vega_lite_chart")) == 3            # category bars, income/spending, rate
+    by_month, payees = at.dataframe[0].value, at.dataframe[1].value
+    assert by_month.columns.tolist() == ["category", "Aug 2026", "Sep 2026", "Oct 2026", "Total"]
+    assert by_month["category"].tolist() == ["Food", "(uncategorised)"]
+    assert payees["payee"].tolist() == ["Grocer", "Streaming"]
+    widget(at.selectbox, "Month").set_value(date(2026, 8, 1)).run()
+    assert "No spending that month" in html(at)
+    assert not at.dataframe                                  # Jun to Aug: no spending, no payees
+    assert any("No spending in those months" in c.value for c in at.caption)
+
+
+def test_stats_without_transactions_say_so():
+    at = run(STATS)
+    assert "Nothing to chart yet" in html(at) and not at.get("vega_lite_chart")

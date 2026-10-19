@@ -43,6 +43,9 @@ The app is being built one page per pull request. So far:
   holds the money. Progress is that account's latest balance, with how much
   a month would reach the target in time. **Reached** when the balance
   covers it, or when you say so.
+- **Stats**: spending by category for a chosen month (bars) and the last
+  three months (a table), income against spending for 12 months, the
+  savings-rate trend, and the top payees.
 
 Coming next, in this order: Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
