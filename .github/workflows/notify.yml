@@ -1,0 +1,39 @@
+# The morning ping (bills due soon or overdue, a bank to sign in to again)
+# and, on Mondays, the weekly email: see notify.py. Runs after the bank sync.
+# Secrets (Settings -> Secrets and variables -> Actions): DATABASE_URL,
+# NTFY_TOPIC (the ntfy.sh channel on your phone), GMAIL_ADDRESS and
+# GMAIL_APP_PASSWORD (a Google app password, not your Gmail password), and
+# optionally NOTIFY_TO (another address to email) and APP_URL.
+name: Notify
+
+on:
+  schedule:
+    # Daily 12:00 UTC: 07:00 Chicago in summer (CDT), 06:00 in winter (CST).
+    - cron: "0 12 * * *"
+  workflow_dispatch: # the "Run workflow" button on the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python notify.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_TO: ${{ secrets.NOTIFY_TO }}
+          APP_URL: ${{ secrets.APP_URL }}

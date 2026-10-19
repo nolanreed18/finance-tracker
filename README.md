@@ -185,6 +185,32 @@ unlock; removing a bank on the Accounts page tells Plaid to forget it too.
 If a bank asks you to sign in again, the morning run turns red, GitHub
 emails you, and the Accounts page says which bank.
 
+## Notifications
+
+Every morning (7:00 Chicago, after the bank sync) `notify.py` runs in
+GitHub Actions (`.github/workflows/notify.yml`):
+
+- **A ping to your phone** through [ntfy.sh](https://ntfy.sh) when a bill
+  is due in the next 3 days or overdue, or a linked bank needs you to sign
+  in again. Quiet days send nothing. Tapping it opens the app.
+- **On Mondays, an email**: net worth and its 30-day change, this month's
+  spending against budget, the savings rate so far, the last 7 days by
+  category, what needs attention, the bills coming up, and how many
+  transactions still need a category.
+
+Each goes out at most once a day; both are written by code
+(`app/digest.py`), so what they say is tested. `python notify.py preview`
+prints both without sending.
+
+Setup, once: install the ntfy app on your phone, subscribe to a topic with
+a long random name (it works like a password: anyone who knows it can read
+the pings), and add it as the repository secret `NTFY_TOPIC`. For the email,
+on the Google account that will send it turn on 2-Step Verification, create
+an **App password** (Google Account → Security → 2-Step Verification → App
+passwords), and add `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` as repository
+secrets. The email goes to the same address unless a `NOTIFY_TO` secret
+names another. Pings and email are independent: set up either or both.
+
 ## Backups
 
 `.github/workflows/backup.yml` runs `backup.py` every Sunday morning (and
@@ -226,5 +252,6 @@ up automatically (`.claude/hooks/session-start.sh`).
 | `schema.sql`, `apply_schema.py` | The tables (created automatically when the app first connects), and a script to create them by hand. |
 | `db.py` | Finds `DATABASE_URL` (in `.env`, or Streamlit secrets when online). |
 | `backup.py` | Dumps every table to CSV. |
+| `notify.py`, `app/digest.py` | The morning ping and the Monday email: the sending, and the words (pure, tested). |
 | `sync.py`, `app/plaid_api.py` | The daily bank sync, and the handful of Plaid calls it and the Accounts page make. |
 | `CLAUDE.md` | Rules for Claude when it works on this project. |

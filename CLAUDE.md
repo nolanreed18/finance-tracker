@@ -72,6 +72,14 @@ clicking merge).
   transactions wait until they post. Credentials are `PLAID_CLIENT_ID` and
   `PLAID_SECRET` (environment, or `st.secrets`); bank access tokens live in
   the `connections` table and are never printed or shown on a page.
+- **Notifications are built by code**: `app/digest.py` (pure, like
+  `logic.py`) writes the morning ping and the Monday email; `notify.py`
+  sends them (ntfy.sh for the ping, Gmail SMTP with an app password for the
+  email) from `.github/workflows/notify.yml`, at most once a day each (the
+  `settings` table remembers). Keep the email self-contained and email-safe
+  (inline styles, tables, no scripts or web fonts, under 100 KB) and escape
+  user text. Secrets: `NTFY_TOPIC`, `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`,
+  optional `NOTIFY_TO` and `APP_URL`; never print them.
 - A scheduled Claude task (none yet; the categoriser is on the "later" list)
   reaches the database only through one small script over Neon's HTTPS
   endpoint (`db.HttpCursor`, `data.use_http()`), with its commands

@@ -33,6 +33,17 @@ CADENCES = ["weekly", "monthly", "yearly"]
 # Home lists bills due from today through this many days ahead (and any overdue).
 BILL_LOOKAHEAD_DAYS = 7
 
+# The morning ping reminds you of bills due within this many days (and any
+# overdue); the weekly email uses BILL_LOOKAHEAD_DAYS.
+REMINDER_DAYS = 3
+
+# The weekly summary goes out on this weekday (0 = Monday).
+SUMMARY_WEEKDAY = 0
+
+# Where the app lives, for the links in pings and emails (the APP_URL secret
+# overrides it).
+APP_URL = "https://finance-tracke-sgtkbk6rogansxzkzwydqh.streamlit.app"
+
 # A budget category is "close" at this share of its budget and "over" at 100%.
 BUDGET_WARN = Decimal("0.9")
 
