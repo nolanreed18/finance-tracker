@@ -9,6 +9,8 @@ fresh.check()                   # after a redeploy: no stale copies of the app's
 import config
 import data
 import logic
+import plaid_api
+import sync
 from ui import (
     account_badges,
     bump_round,
@@ -20,6 +22,7 @@ from ui import (
     md,
     round_key,
     setup,
+    sync_badge,
 )
 
 setup("Accounts", "Where the money is")
@@ -116,6 +119,152 @@ if not closed_accounts.empty:
 
 st.caption(f"An open account with no balance for {config.STALE_BALANCE_DAYS} days is marked "
            "**Update balance**; balances are entered on the Net worth page.")
+
+# ---- connected banks --------------------------------------------------------
+
+st.subheader("Connected banks")
+PLAID_USER = "owner"             # one person: Plaid's id for you never changes
+NEW_ACCOUNT, NO_SYNC = -1, 0     # choices in the matching dropdown besides our accounts
+
+
+def match_label(choice) -> str:
+    if choice == NEW_ACCOUNT:
+        return "(create a new account)"
+    if choice == NO_SYNC:
+        return "(don't sync this one)"
+    return labels_open.get(choice, str(choice))
+
+
+def finish_link(link_token: str, repairing: int | None) -> None:
+    """After the hosted sign-in: a repaired connection is synced again; a new
+    bank becomes a connection with its accounts listed for matching."""
+    if repairing is not None:
+        data.update_connection(repairing, last_error=None)
+        sync.sync_connection(repairing, today)
+        st.session_state.pop("link", None)
+        done("Signed in again; the bank is syncing.")
+    results = plaid_api.link_results(link_token)
+    if not results:
+        st.warning("Plaid hasn't heard from your bank yet. Finish the sign-in in the other tab, "
+                   "then press this button again.")
+        return
+    for result in results:
+        tokens = plaid_api.exchange(result["public_token"])
+        connection_id = data.add_connection(tokens["item_id"], tokens["access_token"], today,
+                                            institution_name=result["institution_name"])
+        data.save_connected_accounts(connection_id, plaid_api.accounts(tokens["access_token"]))
+    st.session_state.pop("link", None)
+    done(f"Linked {', '.join(r['institution_name'] or 'a bank' for r in results)}. Match its "
+         "accounts to yours below.")
+
+
+if not plaid_api.configured():
+    st.caption("Bank sync isn't set up yet: add `PLAID_CLIENT_ID` and `PLAID_SECRET` to the "
+               "app's secrets (README → Bank sync). Until then, use the Import page.")
+else:
+    labels_open = {int(r.account_id): r.name for r in open_accounts.itertuples()}
+    link = st.session_state.get("link")        # {"token", "url", "repairing"} while signing in
+    if link is None:
+        if st.button("Connect a bank", icon=":material/add_link:", key="connect_bank"):
+            try:
+                made = plaid_api.create_link(PLAID_USER)
+            except (plaid_api.PlaidError, RuntimeError) as exc:
+                st.error(f"Couldn't start the bank sign-in: {md(str(exc))}")
+            else:
+                st.session_state["link"] = {"token": made["link_token"],
+                                            "url": made["hosted_link_url"], "repairing": None}
+                st.rerun()
+    else:
+        with card("link"):
+            st.markdown("**Sign in at your bank** in the tab that opens, then come back and "
+                        "press **I've finished**.")
+            open_col, done_col, cancel_col = st.columns(3)
+            open_col.link_button("Open the sign-in", link["url"], type="primary", width="stretch")
+            if done_col.button("I've finished", key="link_done", width="stretch"):
+                try:
+                    finish_link(link["token"], link["repairing"])
+                except (plaid_api.PlaidError, RuntimeError) as exc:
+                    st.error(f"Plaid said: {md(str(exc))}")
+            if cancel_col.button("Cancel", key="link_cancel", width="stretch"):
+                st.session_state.pop("link", None)
+                st.rerun()
+
+    connections = data.connections()
+    if connections.empty and link is None:
+        empty("account_balance_wallet", "No banks connected",
+              "Connect a bank and its transactions and balances arrive every morning by "
+              "themselves. Until then, the Import page takes a CSV.")
+    for conn in connections.itertuples():
+        cid = int(conn.connection_id)
+        state = logic.sync_badge_state(conn.last_synced_on, conn.last_error, today)
+        with card(f"connection-{cid}"):
+            text_col, button_col = st.columns([3, 1], vertical_alignment="center", wrap=False)
+            facts = [f"{int(conn.matched)} of {logic.plural(int(conn.accounts), 'account')} "
+                     "matched"]
+            if not logic.blank(conn.last_synced_on):
+                facts.append(f"synced {logic.when(conn.last_synced_on, today)}")
+            text_col.markdown(f"**{md(conn.institution_name or 'Bank')}** {sync_badge(state)}  \n"
+                              f"{md(' · '.join(facts))}")
+            if state == "error":
+                text_col.caption(md(logic.sync_problem(conn.last_error)))
+            if button_col.button("Sync now", key=f"sync_{cid}", width="stretch"):
+                result = sync.sync_connection(cid, today)
+                if "error" in result:
+                    done(f"Sync failed: {logic.sync_problem(result['error'])}")
+                done(f"Synced {conn.institution_name or 'the bank'}: {result['added']} new, "
+                     f"{result['balances']} balances updated.")
+            if state == "error" and st.button("Sign in again", key=f"relink_{cid}",
+                                              type="primary"):
+                try:
+                    made = plaid_api.create_link(PLAID_USER, data.connection(cid)["access_token"])
+                except (plaid_api.PlaidError, RuntimeError) as exc:
+                    st.error(f"Couldn't start the bank sign-in: {md(str(exc))}")
+                else:
+                    st.session_state["link"] = {"token": made["link_token"],
+                                                "url": made["hosted_link_url"], "repairing": cid}
+                    st.rerun()
+
+            bank_accounts = data.connected_accounts(cid)
+            match_round = st.session_state.get(f"match_round_{cid}", 0)
+            with st.form(f"match_{cid}_{match_round}"):
+                st.caption("Which of your accounts each bank account feeds. Pick **create a new "
+                           "account** for one you haven't added yet.")
+                choices = {}
+                for ba in bank_accounts.itertuples():
+                    current = (int(ba.account_id) if not logic.blank(ba.account_id)
+                               else logic.suggest_account(ba.name, ba.mask, accounts) or NEW_ACCOUNT)
+                    options = [NEW_ACCOUNT, NO_SYNC, *labels_open]
+                    choices[int(ba.connected_account_id)] = st.selectbox(
+                        f"{ba.name}" + (f" ····{ba.mask}" if not logic.blank(ba.mask) else ""),
+                        options, index=index_of(options, current), format_func=match_label,
+                        key=f"match_{ba.connected_account_id}_{match_round}")
+                saved_matches = st.form_submit_button("Save matches", type="primary")
+            if saved_matches:
+                created = []
+                for ba in bank_accounts.itertuples():
+                    choice = choices[int(ba.connected_account_id)]
+                    if choice == NEW_ACCOUNT:
+                        kind, owed = logic.account_kind_for(ba.kind, ba.subtype)
+                        name = ba.name if not taken(ba.name) else f"{ba.name} ····{ba.mask}"
+                        choice = data.add_account(name, kind, is_liability=owed,
+                                                  institution=conn.institution_name, opened_on=today)
+                        created.append(name)
+                    data.match_connected_account(int(ba.connected_account_id),
+                                                 None if choice == NO_SYNC else int(choice))
+                next_round(f"match_round_{cid}")
+                done("Matches saved." + (f" Created {', '.join(created)}." if created else "")
+                     + " Press Sync now to pull the history.")
+
+            if delete_button("bank connection", f"connection_{cid}"):
+                try:
+                    plaid_api.remove(data.connection(cid)["access_token"])
+                except (plaid_api.PlaidError, RuntimeError):
+                    pass                    # Plaid may already have forgotten it
+                data.delete_connection(cid)
+                done(f"Removed {conn.institution_name or 'the bank'}. Your accounts and their "
+                     "transactions stay.")
+    st.caption("Linked banks sync every morning; **Sync now** pulls what's new straight away. "
+               "Removing a bank keeps everything already imported.")
 
 # ---- edit -------------------------------------------------------------------
 

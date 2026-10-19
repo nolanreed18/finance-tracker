@@ -35,7 +35,7 @@ rate_col.metric("Savings rate", logic.percent(rate), border=True,
 # ---- needs attention --------------------------------------------------------
 
 st.subheader("Needs attention")
-items = logic.needs_attention(bills, budgets, accounts, today)
+items = logic.needs_attention(bills, budgets, accounts, today, data.connections())
 if accounts.empty:
     empty("account_balance", "Nothing to show yet",
           "Start on Accounts: add each place your money lives or is owed.")

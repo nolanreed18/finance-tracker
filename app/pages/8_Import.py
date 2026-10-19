@@ -35,6 +35,10 @@ st.markdown(
 import_round = st.session_state.get("import_round", 0)
 account_id = st.selectbox("Account the file belongs to", list(account_names),
                           format_func=account_names.get, key="import_account")
+synced = data.connected_accounts()
+if not synced.empty and account_id in synced["account_id"].dropna().astype(int).tolist():
+    st.info(f"{account_names[account_id]} is fed by a connected bank, so you shouldn't need a "
+            "file. Rows the feed already brought in are skipped as duplicates.")
 uploaded = st.file_uploader("CSV file", type=["csv", "txt"], key=f"import_file_{import_round}")
 pasted = st.text_area("…or paste the rows, header line first", height=120,
                       key=f"import_text_{import_round}",
