@@ -46,9 +46,14 @@ The app is being built one page per pull request. So far:
 - **Stats**: spending by category for a chosen month (bars) and the last
   three months (a table), income against spending for 12 months, the
   savings-rate trend, and the top payees.
+- **Import**: a CSV exported from your bank or card (or rows pasted in).
+  Headers are matched loosely (date; description or payee; one signed
+  amount column, or debit and credit columns; category), you see a preview
+  with any problems, and the rows go in all at once or not at all. The
+  same row (account, date, amount, description) never imports twice, so
+  re-importing an overlapping file is safe.
 
-Coming next, in this order: Bills, Net
-worth, Goals, Stats and Import (a CSV from your bank).
+Coming next: Home's headline numbers and Needs attention list.
 
 Settings you might want to change (the 7-day bill window, the 90% budget
 warning, the 30-day balance reminder, the account types) are in
