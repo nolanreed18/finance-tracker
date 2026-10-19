@@ -259,6 +259,19 @@ def account_badges(kind: str, is_liability: bool, closed: bool, stale: bool) -> 
     return " ".join(parts)
 
 
+def bill_badges(state: str | None, autopay: bool, active: bool) -> str:
+    """Overdue (red) or Due (orange) when the date is near, Autopay (blue:
+    it happens by itself), Paused (grey) when inactive."""
+    parts = []
+    if not active:
+        parts.append(badge("gray", "Paused"))
+    elif state is not None:
+        parts.append(attention_badge(state))
+    if autopay:
+        parts.append(badge("blue", "Autopay"))
+    return " ".join(parts)
+
+
 def budget_badge(state: str | None) -> str:
     """Over budget (red), close to it (orange), on track (green); '' when
     nothing is budgeted."""

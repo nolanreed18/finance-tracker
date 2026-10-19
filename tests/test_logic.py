@@ -181,3 +181,43 @@ def test_budget_summary_counts_left_only_against_budgeted_categories():
     assert logic.budget_summary(frame) == {"budgeted": Decimal("400.00"),
                                            "spent": Decimal("290.50"),
                                            "left": Decimal("149.50")}
+
+
+# ---- bills ------------------------------------------------------------------
+
+def test_the_next_due_date_moves_one_cadence():
+    assert logic.next_due(date(2026, 10, 14), "weekly") == date(2026, 10, 21)
+    assert logic.next_due(date(2026, 10, 31), "monthly") == date(2026, 11, 30)
+    assert logic.next_due(date(2026, 1, 31), "monthly") == date(2026, 2, 28)
+    assert logic.next_due(date(2026, 12, 14), "monthly") == date(2027, 1, 14)
+    assert logic.next_due(date(2028, 2, 29), "yearly") == date(2029, 2, 28)
+    with pytest.raises(ValueError):
+        logic.next_due(TODAY, "daily")
+
+
+def test_a_bill_is_overdue_before_today_and_due_within_the_lookahead():
+    assert logic.bill_state(date(2026, 10, 13), TODAY) == "overdue"
+    assert logic.bill_state(TODAY, TODAY) == "due"
+    assert logic.bill_state(date(2026, 10, 21), TODAY) == "due"             # 7 days out
+    assert logic.bill_state(date(2026, 10, 22), TODAY) is None
+    assert logic.bill_state(None, TODAY) is None
+    assert logic.bill_state(date(2026, 10, 17), TODAY, lookahead=2) is None
+
+
+def test_due_text():
+    assert logic.due_text(date(2026, 10, 11), TODAY) == "3 days overdue"
+    assert logic.due_text(date(2026, 10, 13), TODAY) == "1 day overdue"
+    assert logic.due_text(TODAY, TODAY) == "due today"
+    assert logic.due_text(date(2026, 10, 15), TODAY) == "due tomorrow"
+    assert logic.due_text(date(2026, 10, 20), TODAY) == "due Tue Oct 20"
+
+
+def test_monthly_cost_spreads_weekly_and_yearly_bills():
+    assert logic.monthly_cost(Decimal("12"), "weekly") == Decimal("52.00")
+    assert logic.monthly_cost(Decimal("120"), "yearly") == Decimal("10.00")
+    assert logic.monthly_cost(Decimal("99.99"), "monthly") == Decimal("99.99")
+    frame = pd.DataFrame([{"amount": Decimal("12"), "cadence": "weekly"},
+                          {"amount": Decimal("120"), "cadence": "yearly"},
+                          {"amount": Decimal("30"), "cadence": "monthly"}])
+    assert logic.bills_per_month(frame) == Decimal("92.00")
+    assert logic.bills_per_month(frame.iloc[0:0]) == Decimal("0.00")

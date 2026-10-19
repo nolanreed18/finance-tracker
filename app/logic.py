@@ -6,7 +6,7 @@ Money is Decimal throughout, never float.
 """
 
 import re
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import pandas as pd
@@ -139,6 +139,59 @@ def transaction_label(happened_on, payee, amount, account) -> str:
     who = value(payee) or value(account) or ""
     tail = f" · {account}" if value(payee) and value(account) else ""
     return f"{happened_on:%b} {happened_on.day} · {who} · {money(amount)}{tail}"
+
+
+# ---- bills ------------------------------------------------------------------
+
+def next_due(due: date, cadence: str) -> date:
+    """The due date one cadence on: a week, a month (same day where the
+    month has it), or a year."""
+    if cadence == "weekly":
+        return due + timedelta(days=7)
+    if cadence == "monthly":
+        return add_months(due, 1)
+    if cadence == "yearly":
+        return add_months(due, 12)
+    raise ValueError(f"unknown cadence {cadence!r}")
+
+
+def bill_state(due, today: date, lookahead: int = config.BILL_LOOKAHEAD_DAYS) -> str | None:
+    """'overdue' before today, 'due' from today through `lookahead` days,
+    None when it's further off."""
+    due = value(due)
+    if due is None:
+        return None
+    if due < today:
+        return "overdue"
+    if due <= today + timedelta(days=lookahead):
+        return "due"
+    return None
+
+
+def due_text(due: date, today: date) -> str:
+    """'3 days overdue', 'due today', 'due tomorrow', 'due Tue Oct 20'."""
+    late = (today - due).days
+    if late > 0:
+        return f"{plural(late, 'day')} overdue"
+    return f"due {when(due, today)}"
+
+
+def monthly_cost(amount, cadence: str) -> Decimal:
+    """What a bill costs per month on average: weekly x 52/12, yearly / 12."""
+    amount = to_money(amount) or Decimal("0")
+    if cadence == "weekly":
+        return (amount * 52 / 12).quantize(CENT, rounding=ROUND_HALF_UP)
+    if cadence == "yearly":
+        return (amount / 12).quantize(CENT, rounding=ROUND_HALF_UP)
+    return amount
+
+
+def bills_per_month(frame: pd.DataFrame) -> Decimal:
+    """The average monthly cost of a frame of active bills."""
+    total = Decimal("0.00")
+    for row in frame.itertuples(index=False):
+        total += monthly_cost(row.amount, row.cadence)
+    return total
 
 
 # ---- budgets ----------------------------------------------------------------

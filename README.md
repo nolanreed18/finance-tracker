@@ -30,6 +30,11 @@ The app is being built one page per pull request. So far:
   to budget** at 90%, **Over budget** at 100%. Set all the month's amounts
   in one form, or **Copy last month**. Categories (income and expense) are
   added, renamed and archived here.
+- **Bills**: recurring bills and subscriptions with their amount, cadence
+  (weekly, monthly, yearly), next due date, the account they're paid from
+  and an autopay flag. **Due** from today through 7 days ahead, **Overdue**
+  after. **Mark paid** moves the due date on one cadence and, if the box is
+  ticked, logs the payment as a transaction. A bill can be paused.
 
 Coming next, in this order: Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
