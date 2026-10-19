@@ -399,3 +399,35 @@ def test_saving_several_balances_at_once_is_all_or_nothing():
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         data.save_balances([(checking, 1), (999, 1)], date(2026, 10, 15))
     assert len(data.balances()) == 2                             # nothing from the failed run
+
+
+# ---- goals ------------------------------------------------------------------
+
+def test_goals_carry_their_accounts_latest_balance_and_list_open_ones_first():
+    savings = data.add_account("Savings", "savings")
+    data.save_balance(savings, date(2026, 9, 1), Decimal("100"))
+    data.save_balance(savings, date(2026, 10, 1), Decimal("250"))
+    trip = data.add_goal("Trip", "1000", target_on=date(2027, 6, 1), account_id=savings)
+    fund = data.add_goal(" Fund ", Decimal("5000"), target_on=date(2027, 1, 1), account_id=savings)
+    car = data.add_goal("Car", "20000")
+    done_goal = data.add_goal("Done", "10", reached_on=TODAY)
+    rows = data.goals()
+    assert rows["goal_id"].tolist() == [fund, trip, car, done_goal]
+    assert rows.iloc[0]["name"] == "Fund" and rows.iloc[0]["balance"] == Decimal("250.00")
+    assert rows.iloc[0]["balance_on"] == date(2026, 10, 1) and rows.iloc[0]["account"] == "Savings"
+    assert logic.blank(rows.iloc[2]["balance"]) and logic.blank(rows.iloc[2]["account"])
+    data.update_goal(car, account_id=savings, target_amount="15000")
+    assert data.goal(car)["target_amount"] == Decimal("15000.00")
+    with pytest.raises(ValueError):
+        data.update_goal(car, balance=1)
+    with pytest.raises(ValueError):
+        data.add_goal("X", "1", colour="red")
+    data.delete_goal(done_goal)
+    assert len(data.goals()) == 3
+
+
+def test_deleting_the_account_leaves_the_goal_without_one():
+    wallet = data.add_account("Wallet", "cash")
+    goal_id = data.add_goal("Trip", "100", account_id=wallet)
+    data.delete_account(wallet)
+    assert data.goal(goal_id)["account_id"] is None

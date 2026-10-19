@@ -503,6 +503,48 @@ def save_balances(entries: list[tuple[int, object]], as_of: date) -> int:
     return saved
 
 
+# ---- goals ------------------------------------------------------------------
+
+GOAL_FIELDS = {"name", "target_amount", "target_on", "account_id", "note", "reached_on"}
+
+_GOALS = """
+    select g.*, a.name as account, a.closed_on as account_closed_on,
+           b.amount as balance, b.as_of as balance_on
+    from goals g
+    left join accounts a using (account_id)
+    left join lateral (select amount, as_of from balances b
+                       where b.account_id = g.account_id
+                       order by as_of desc limit 1) b on true
+"""
+
+
+def goals() -> pd.DataFrame:
+    """Goals still open first (soonest target first), then reached ones, each
+    with its account's latest balance."""
+    return _read(_GOALS + """
+        order by g.reached_on is not null, g.target_on nulls last, lower(g.name)
+    """)
+
+
+def goal(goal_id: int) -> dict | None:
+    return _one(_GOALS + " where g.goal_id = %s", (goal_id,))
+
+
+def add_goal(name: str, target_amount, **fields) -> int:
+    unknown = set(fields) - GOAL_FIELDS
+    if unknown:
+        raise ValueError(f"unknown goal fields {sorted(unknown)}")
+    return _insert("goals", "goal_id", {"name": name, "target_amount": target_amount, **fields})
+
+
+def update_goal(goal_id: int, **fields) -> None:
+    _update("goals", "goal_id", goal_id, fields, GOAL_FIELDS)
+
+
+def delete_goal(goal_id: int) -> None:
+    _delete("goals", "goal_id", goal_id)
+
+
 # ---- settings ---------------------------------------------------------------
 
 def get_setting(key: str, default: str | None = None) -> str | None:

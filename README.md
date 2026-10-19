@@ -39,6 +39,10 @@ The app is being built one page per pull request. So far:
   balance; a form that lists every open account with its last balance
   filled in, to save the month's balances in one go; a line of net worth by
   month; and a table of assets against liabilities.
+- **Goals**: savings goals with a target amount, a date and the account that
+  holds the money. Progress is that account's latest balance, with how much
+  a month would reach the target in time. **Reached** when the balance
+  covers it, or when you say so.
 
 Coming next, in this order: Bills, Net
 worth, Goals, Stats and Import (a CSV from your bank).
