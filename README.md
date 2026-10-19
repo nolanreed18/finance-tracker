@@ -49,13 +49,19 @@ end, Neon Postgres database, hosted free on Streamlit Community Cloud.
   amount column, or debit and credit columns; category), you see a preview
   with any problems, and the rows go in all at once or not at all. The
   same row (account, date, amount, description) never imports twice, so
-  re-importing an overlapping file is safe.
+  re-importing an overlapping file is safe. Card files that list charges
+  as positive numbers (Discover, Amex) are flipped for you; a payment onto
+  a card imports as a transfer, not income.
 
 Entering your first records: see [`SEED.md`](SEED.md).
 
 Settings you might want to change (the 7-day bill window, the 90% budget
 warning, the 30-day balance reminder, the account types) are in
 `app/config.py`.
+
+**Staying signed in.** With the password, reloading the page or closing the
+tab signs you out (Streamlit forgets the visit). Sign in with Google (below)
+keeps you signed in for 30 days on each device.
 
 **Look and feel.** The app opens in a light look; the **Dark mode** switch in
 the sidebar (tap ≫ at the top left on a phone) flips it, and the choice is

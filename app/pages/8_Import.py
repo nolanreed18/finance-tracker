@@ -16,6 +16,7 @@ setup("Import", "A file from your bank or card")
 today = data.today()
 accounts = data.open_accounts()
 account_names = {int(r.account_id): r.name for r in accounts.itertuples()}
+liabilities = {int(r.account_id): bool(r.is_liability) for r in accounts.itertuples()}
 
 if accounts.empty:
     empty("account_balance", "No open accounts yet",
@@ -34,10 +35,6 @@ st.markdown(
 import_round = st.session_state.get("import_round", 0)
 account_id = st.selectbox("Account the file belongs to", list(account_names),
                           format_func=account_names.get, key="import_account")
-flip_signs = st.checkbox("Spending is positive in this file (flip the signs)",
-                         key="import_flip",
-                         help="Many card statements list charges as positive numbers. Tick "
-                              "this so they're stored as spending.")
 uploaded = st.file_uploader("CSV file", type=["csv", "txt"], key=f"import_file_{import_round}")
 pasted = st.text_area("…or paste the rows, header line first", height=120,
                       key=f"import_text_{import_round}",
@@ -57,8 +54,16 @@ except ValueError as exc:
     st.error(str(exc))
     st.stop()
 
+is_liability = liabilities[account_id]
+# Ticked for you when a card file lists charges as positive numbers (Discover,
+# Amex); a new file or account gets a fresh guess (the key changes).
+guess = logic.spending_looks_positive(frame, is_liability)
+flip_signs = st.checkbox("Spending is positive in this file (flip the signs)", value=guess,
+                         key=f"import_flip_{account_id}_{hash(tuple(frame.columns))}_{guess}",
+                         help="Discover and Amex list charges as positive numbers; Chase and "
+                              "Capital One don't. Ticked for you when the file looks that way.")
 categories = {r.name: int(r.category_id) for r in data.categories().itertuples()}
-rows, problems = logic.map_import(frame, account_id, categories, flip_signs)
+rows, problems = logic.map_import(frame, account_id, categories, flip_signs, is_liability)
 known = data.known_import_keys([r["import_key"] for r in rows])
 new_rows = [r for r in rows if r["import_key"] not in known]
 
@@ -95,6 +100,10 @@ st.dataframe(
 if sums is not None and sums["income"] > sums["spending"] and not flip_signs:
     st.caption("Mostly positive amounts? If this is a card statement, tick **Spending is "
                "positive** above so charges are stored as spending.")
+if is_liability and any(r["kind"] == "transfer" for r in rows):
+    st.caption("Payments onto this card come in as **transfers** (money moved from another "
+               "account), so they don't count as income. Refunds stay as spending with a "
+               "positive sign, which reduces the month's total.")
 
 if not new_rows:
     st.info("Every row in this file is already in your transactions.")
