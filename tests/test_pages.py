@@ -812,3 +812,42 @@ def test_import_warns_about_an_account_a_bank_feeds(bank):
     assert "is fed by a connected bank" in at.info[0].value
     widget(at.selectbox, "Account the file belongs to").set_value(ids["card"]).run()
     assert not at.info
+
+
+# ---- payoff -----------------------------------------------------------------
+
+def test_the_payoff_calculator_shows_for_a_card_and_uses_its_apr():
+    ids = seed()
+    data.update_account(ids["card"], apr=Decimal("24"))
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = ids["card"]
+    at.run()
+    assert "Payoff" in [h.value for h in at.subheader]
+    assert widget(at.number_input, "Owed ($)").value == 430.25
+    assert widget(at.number_input, "APR %").value == 24.0
+    assert widget(at.number_input, "I'll pay ($/month)").value == 430.25
+    assert [m.value for m in at.metric] == ["$0.00", "1", "$0.00"]      # paying in full: free
+    widget(at.number_input, "I'll pay ($/month)").set_value(50.0).run()
+    assert [m.value for m in at.metric] == ["$7.61", "10", "$36.46"]
+    assert any("a month clears it in 3 months" in m.value for m in at.markdown)
+    widget(at.number_input, "I'll pay ($/month)").set_value(5.0).run()
+    assert [m.value for m in at.metric][1] == "never" and at.warning
+
+
+def test_the_payoff_calculator_is_not_shown_for_a_checking_account():
+    ids = seed()
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = ids["checking"]
+    at.run()
+    assert "Payoff" not in [h.value for h in at.subheader]
+
+
+def test_saving_an_apr_from_the_edit_form():
+    ids = seed()
+    at = new_app(ACCOUNTS)
+    at.session_state[ui.round_key("pick_account")] = ids["card"]
+    at.run()
+    assert any("Save the card's APR" in c.value for c in at.caption)
+    widget(at.number_input, "Interest rate (APR %)").set_value(22.99)
+    click(at, "Save changes")
+    assert data.account(ids["card"])["apr"] == Decimal("22.99")

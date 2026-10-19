@@ -56,6 +56,8 @@ def today() -> date:
 MIGRATIONS: list[str] = [
     # 2026-10: what the bank feed called a transaction, for the categoriser.
     "alter table transactions add column if not exists source_category text",
+    # 2026-10: a card's or loan's yearly interest rate, for the payoff calculator.
+    "alter table accounts add column if not exists apr numeric(5,2) check (apr >= 0)",
 ]
 
 
@@ -201,7 +203,7 @@ def _delete(table: str, key: str, key_value: int, in_use_message: str = "") -> N
 # ---- accounts ---------------------------------------------------------------
 
 ACCOUNT_FIELDS = {"name", "kind", "institution", "is_liability", "opened_on", "closed_on",
-                  "notes"}
+                  "apr", "notes"}
 
 _ACCOUNTS = """
     select a.*, b.amount as balance, b.as_of as balance_on,

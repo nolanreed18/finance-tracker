@@ -115,7 +115,7 @@ def test_money_columns_are_numeric_to_the_cent(database):
             where table_schema = 'public' and data_type = 'numeric'
             order by 1
         """).fetchall()
-    assert columns == [(name, 12, 2) for name in (
+    assert columns == [("accounts.apr", 5, 2)] + [(name, 12, 2) for name in (
         "balances.amount", "bills.amount", "budgets.amount", "goals.target_amount",
         "transactions.amount")]
 
@@ -465,3 +465,15 @@ def test_an_import_is_all_or_nothing():
     with pytest.raises(psycopg.errors.ForeignKeyViolation):
         data.import_transactions(rows, TODAY)
     assert data.transactions().empty
+
+
+def test_an_accounts_apr_is_saved_and_the_live_database_gains_the_column(database):
+    card = data.add_account("Visa", "credit card", is_liability=True, apr="22.99")
+    assert data.account(card)["apr"] == Decimal("22.99")
+    data.update_account(card, apr=None)
+    assert data.account(card)["apr"] is None
+    with psycopg.connect(database, autocommit=True) as conn:
+        conn.execute("alter table accounts drop column apr")
+    data.migrate()
+    data.update_account(card, apr=Decimal("19.5"))
+    assert data.account(card)["apr"] == Decimal("19.50")

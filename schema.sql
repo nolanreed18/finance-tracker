@@ -17,6 +17,7 @@ create table if not exists accounts (
     is_liability  boolean not null default false,
     opened_on     date,
     closed_on     date,              -- closed accounts keep their history
+    apr           numeric(5,2) check (apr >= 0),   -- yearly interest rate, %, for what's owed
     notes         text,
     check (closed_on is null or opened_on is null or closed_on >= opened_on)
 );

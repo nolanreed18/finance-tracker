@@ -602,3 +602,37 @@ def test_a_bank_that_needs_a_new_sign_in_comes_first_on_home():
         ("relink", "Chase", "The bank wants you to sign in again.", "pages/1_Accounts.py"),
         ("due", "Rent", "$1.00 · due today", "pages/4_Bills.py"),
     ]
+
+
+# ---- interest on what's owed ------------------------------------------------
+
+def test_interest_next_month_is_charged_on_what_is_left():
+    assert logic.interest_if_short(Decimal("1200"), Decimal("1200"), "24") == Decimal("0.00")
+    assert logic.interest_if_short(Decimal("1200"), Decimal("200"), "24") == Decimal("20.00")
+    assert logic.interest_if_short(Decimal("1200"), Decimal("5000"), "24") == Decimal("0.00")
+    assert logic.interest_if_short(Decimal("430.25"), Decimal("0"), "22.99") == Decimal("8.24")
+    assert logic.interest_if_short(None, None, None) == Decimal("0.00")
+
+
+def test_payoff_plan_counts_months_and_interest():
+    assert logic.payoff_plan(Decimal("1200"), "0", Decimal("100")) == {
+        "months": 12, "interest": Decimal("0.00"), "paid": Decimal("1200.00")}
+    plan = logic.payoff_plan(Decimal("1200"), "24", Decimal("100"))
+    assert plan["months"] == 14 and Decimal("150") < plan["interest"] < Decimal("160")
+    assert plan["paid"] == Decimal("1200.00") + plan["interest"]
+    assert logic.payoff_plan(Decimal("1200"), "24", Decimal("1200")) == {
+        "months": 1, "interest": Decimal("0.00"), "paid": Decimal("1200.00")}   # in full: free
+    assert logic.payoff_plan(Decimal("0"), "24", Decimal("50"))["months"] == 0
+    assert logic.payoff_plan(Decimal("1200"), "24", Decimal("23")) is None      # under the interest
+    assert logic.payoff_plan(Decimal("1200"), "24", Decimal("0")) is None
+
+
+def test_the_payment_that_clears_a_balance_in_n_months():
+    assert logic.payment_to_clear(Decimal("1200"), "0", 12) == Decimal("100.00")
+    monthly = logic.payment_to_clear(Decimal("1200"), "24", 12)
+    assert Decimal("111") < monthly < Decimal("112")                          # the loan formula
+    for n in (3, 6, 12, 24):                                                   # and it really clears
+        assert logic.payoff_plan(Decimal("430.25"), "24", logic.payment_to_clear(
+            Decimal("430.25"), "24", n))["months"] == n
+    assert logic.payment_to_clear(Decimal("0"), "24", 12) == Decimal("0.00")
+    assert logic.payment_to_clear(Decimal("1200"), "24", 0) == Decimal("0.00")

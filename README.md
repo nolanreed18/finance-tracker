@@ -16,7 +16,11 @@ end, Neon Postgres database, hosted free on Streamlit Community Cloud.
   credit card, brokerage, retirement, loan, cash, other), with its bank,
   latest balance and when that was taken. Cards and loans are liabilities,
   which net worth subtracts. An account with history is **closed**, never
-  deleted (and can be reopened); only an empty one can be deleted.
+  deleted (and can be reopened); only an empty one can be deleted. For a
+  card or loan, save its APR and the **Payoff** calculator shows what
+  paying less than the full balance costs: interest next month, months to
+  clear, total interest, and the monthly amount to be clear in 3, 6 or 12
+  months.
 - **Transactions**: every line of income, spending and transfers between your
   own accounts, with a date, account, amount, category, payee and notes.
   Filter by month, account, category or a word in the payee or notes, and
