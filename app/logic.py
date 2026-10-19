@@ -467,6 +467,33 @@ def net_worth_history(balances: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
+def net_worth_on(balances: pd.DataFrame, on: date) -> Decimal:
+    """Net worth as it stood on a day: each account's latest balance on or
+    before it, liabilities negative, closed accounts counted until the day
+    they closed. Zero when nothing was known yet."""
+    zero = Decimal("0.00")
+    if balances.empty:
+        return zero
+    latest: dict[int, tuple] = {}
+    for row in balances.itertuples(index=False):
+        if row.as_of > on:
+            continue
+        closed = value(row.closed_on)
+        if closed is not None and closed < on:
+            continue
+        key = int(row.account_id)
+        if key not in latest or row.as_of >= latest[key][0]:
+            latest[key] = (row.as_of, to_money(row.amount) or zero, bool(row.is_liability))
+    return sum((-amt if owed else amt for _, amt, owed in latest.values()), zero)
+
+
+def uncategorised(frame: pd.DataFrame) -> int:
+    """How many spending or income rows have no category yet."""
+    if frame.empty:
+        return 0
+    return int(((frame["kind"] != "transfer") & frame["category_id"].isna()).sum())
+
+
 def stale_balance(as_of, today: date, days: int = config.STALE_BALANCE_DAYS) -> bool:
     """An account whose latest balance is `days` old or more, or that has none,
     is due an update."""
