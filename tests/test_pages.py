@@ -612,3 +612,46 @@ def test_stats_draw_the_month_the_year_and_the_payees():
 def test_stats_without_transactions_say_so():
     at = run(STATS)
     assert "Nothing to chart yet" in html(at) and not at.get("vega_lite_chart")
+
+
+# ---- import -----------------------------------------------------------------
+
+IMPORT = ROOT / "app" / "pages" / "8_Import.py"
+CSV = ("Transaction Date,Description,Amount,Category\n"
+       "10/12/2026,CAFE #12,-4.50,Food\n"
+       "10/01/2026,PAYROLL,2500.00,Pay\n"
+       "10/13/2026,GAS,-40,Car\n")
+
+
+def test_import_previews_then_adds_all_at_once_and_never_twice():
+    ids = seed()
+    at = run(IMPORT)
+    assert not at.dataframe                                  # nothing until a file arrives
+    widget(at.text_area, "…or paste the rows, header line first").set_value(CSV).run()
+    assert not at.exception
+    assert len(at.dataframe[0].value) == 3
+    assert at.warning[0].value == "Categories not in your list were left blank: Car."
+    assert any("3 new transactions" in m.value for m in at.markdown)
+    click(at, "Import 3 transactions into Checking")
+    assert at.success[0].value == "Imported 3 transactions."
+    added = data.transactions(account_id=ids["checking"])
+    assert len(added) == 4 + 3 - 1                           # seed had 3 on Checking
+    cafe = added[added["payee"] == "CAFE #12"].iloc[0]
+    assert (cafe["amount"], cafe["kind"], cafe["category"]) == (Decimal("-4.50"), "expense", "Food")
+    # The same file again: everything is already there.
+    widget(at.text_area, "…or paste the rows, header line first").set_value(CSV).run()
+    assert at.info[0].value == "Every row in this file is already in your transactions."
+    assert not [b for b in at.button if b.label.startswith("Import ")]
+    assert len(data.transactions(account_id=ids["checking"])) == 6
+
+
+def test_import_refuses_a_file_without_the_right_headers():
+    seed()
+    at = run(IMPORT)
+    widget(at.text_area, "…or paste the rows, header line first").set_value("a,b\n1,2\n").run()
+    assert "Nothing to import" in html(at) and len(at.warning) == 3
+
+
+def test_import_needs_an_account_first():
+    at = run(IMPORT)
+    assert "No open accounts yet" in html(at)

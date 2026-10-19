@@ -501,3 +501,113 @@ def match_columns(headers, aliases: dict[str, list[str]] = ALIASES) -> dict[str,
                 found[field] = by_norm[name]
                 break
     return found
+
+
+def words(text) -> str:
+    """Text lower-cased with punctuation and extra spaces dropped, so "CAFE
+    #12 - Main St." and "cafe 12 main st" match."""
+    return " ".join(re.findall(r"[a-z0-9]+", str(text or "").lower()))
+
+
+def import_key(account_id: int, happened_on: date, amount, description) -> str:
+    """What makes an imported row the same row: its account, date, amount and
+    description (lower-cased, punctuation dropped). A row with this key
+    already stored never imports again."""
+    return f"{account_id}|{happened_on.isoformat()}|{to_money(amount)}|{words(description)}"
+
+
+def read_csv(text: str) -> pd.DataFrame:
+    """A bank file's rows from its text, every cell as text (so amounts and
+    dates are read by map_import, not guessed by pandas). Blank lines and
+    a byte-order mark are ignored; raises ValueError when there's no table."""
+    from io import StringIO
+
+    body = text.lstrip("\ufeff").strip()
+    if not body:
+        raise ValueError("The file is empty.")
+    try:
+        frame = pd.read_csv(StringIO(body), dtype=str, skip_blank_lines=True,
+                            skipinitialspace=True)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise ValueError(f"Couldn't read that as a CSV file: {exc}") from None
+    frame.columns = [str(c).strip() for c in frame.columns]
+    return frame
+
+
+def map_import(frame: pd.DataFrame, account_id: int, categories: dict[str, int] | None = None,
+               flip_signs: bool = False) -> tuple[list[dict], list[str]]:
+    """Rows ready for data.import_transactions, and a note for each problem.
+
+    The file needs a date column, a description column and either one
+    amount column (signed) or debit and credit columns. Spending must come
+    out negative: tick flip_signs for a card statement that lists charges as
+    positive numbers. A row's category is matched to yours by name (any
+    capitalisation); unknown ones are left blank. Row numbers in the notes
+    are file rows (the header is row 1).
+    """
+    columns = match_columns(frame.columns)
+    problems = []
+    if "date" not in columns:
+        problems.append("No date column found — expected a header like “Date”.")
+    if "description" not in columns:
+        problems.append("No description column found — expected a header like “Description” "
+                        "or “Payee”.")
+    if "amount" not in columns and not ("debit" in columns or "credit" in columns):
+        problems.append("No amount column found — expected “Amount”, or “Debit” and “Credit”.")
+    if problems:
+        return [], problems
+    lookup = {name.lower(): cid for name, cid in (categories or {}).items()}
+    unknown_categories: set[str] = set()
+
+    def cell(row, field):
+        header = columns.get(field)
+        return None if header is None else value(row[header])
+
+    rows, seen = [], set()
+    for index, row in frame.iterrows():
+        line = index + 2 if isinstance(index, int) else index
+        if all(blank(v) for v in row.values):
+            continue
+        raw_date = cell(row, "date")
+        parsed = pd.to_datetime(raw_date, errors="coerce") if raw_date is not None else pd.NaT
+        if pd.isna(parsed):
+            problems.append(f"Row {line}: skipped — couldn't read the date “{raw_date}”.")
+            continue
+        try:
+            if "amount" in columns:
+                amount = to_money(cell(row, "amount"))
+            else:
+                debit = to_money(cell(row, "debit")) or Decimal("0")
+                credit = to_money(cell(row, "credit")) or Decimal("0")
+                amount = credit - abs(debit)
+                if blank(cell(row, "debit")) and blank(cell(row, "credit")):
+                    amount = None
+        except ValueError:
+            problems.append(f"Row {line}: skipped — couldn't read the amount.")
+            continue
+        if amount is None:
+            problems.append(f"Row {line}: skipped — no amount.")
+            continue
+        if flip_signs:
+            amount = -amount
+        description = str(cell(row, "description") or "").strip()
+        category_id = None
+        if (raw_category := cell(row, "category")) is not None:
+            category_id = lookup.get(str(raw_category).strip().lower())
+            if category_id is None:
+                unknown_categories.add(str(raw_category).strip())
+        key = import_key(account_id, parsed.date(), amount, description)
+        if key in seen:
+            problems.append(f"Row {line}: skipped — the same as an earlier row in this file.")
+            continue
+        seen.add(key)
+        rows.append({
+            "account_id": account_id, "happened_on": parsed.date(), "amount": amount,
+            "kind": "income" if amount > 0 else "expense", "category_id": category_id,
+            "payee": description or None, "import_key": key,
+        })
+    if unknown_categories:
+        shown = ", ".join(sorted(unknown_categories)[:5])
+        problems.append(f"Categories not in your list were left blank: {shown}"
+                        + ("…" if len(unknown_categories) > 5 else "."))
+    return rows, problems

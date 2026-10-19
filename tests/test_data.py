@@ -438,3 +438,30 @@ def test_transactions_since_a_date():
     assert len(data.transactions(since=date(2026, 10, 1))) == 4
     assert data.transactions(since=date(2026, 10, 12))["transaction_id"].tolist() == [
         s["ids"][3], s["ids"][2]]
+
+
+# ---- import -----------------------------------------------------------------
+
+def test_importing_the_same_file_twice_adds_nothing():
+    checking = data.add_account("Checking", "checking")
+    rows, _ = logic.map_import(logic.read_csv(
+        "Date,Description,Amount\n2026-10-12,CAFE #12,-4.50\n2026-10-01,PAYROLL,2500\n"), checking)
+    assert data.import_transactions(rows, TODAY) == (2, 0)
+    assert data.import_transactions(rows, TODAY) == (0, 2)
+    stored = data.transactions()
+    assert stored["payee"].tolist() == ["CAFE #12", "PAYROLL"]
+    assert stored["import_key"].tolist()[0] == f"{checking}|2026-10-12|-4.50|cafe 12"
+    assert stored["created_on"].tolist() == [TODAY, TODAY]
+    assert data.known_import_keys([r["import_key"] for r in rows] + ["x"]) == {
+        r["import_key"] for r in rows}
+    assert data.known_import_keys([]) == set()
+
+
+def test_an_import_is_all_or_nothing():
+    checking = data.add_account("Checking", "checking")
+    rows, _ = logic.map_import(logic.read_csv(
+        "Date,Description,Amount\n2026-10-12,A,-1\n2026-10-13,B,-2\n"), checking)
+    rows[1]["account_id"] = 999                                # breaks on the second row
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        data.import_transactions(rows, TODAY)
+    assert data.transactions().empty

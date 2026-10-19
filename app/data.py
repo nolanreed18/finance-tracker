@@ -357,6 +357,34 @@ def delete_transaction(transaction_id: int) -> None:
     _delete("transactions", "transaction_id", transaction_id)
 
 
+def known_import_keys(keys: list[str]) -> set[str]:
+    """Which of these import keys are already stored."""
+    if not keys:
+        return set()
+    with _cursor() as cur:
+        cur.execute("select import_key from transactions where import_key = any(%s)", (keys,))
+        return {row[0] for row in cur.fetchall()}
+
+
+def import_transactions(rows: list[dict], on: date) -> tuple[int, int]:
+    """Add rows from logic.map_import, all or none; (added, skipped). A row
+    whose import_key is already stored is skipped, so importing the same
+    file twice adds nothing."""
+    added = 0
+    with _transaction() as cur:
+        for row in rows:
+            cleaned = {k: _clean(v) for k, v in row.items()}
+            columns = [*cleaned, "created_on"]
+            cur.execute(sql.SQL("""
+                insert into transactions ({}) values ({})
+                on conflict (import_key) do nothing
+            """).format(sql.SQL(", ").join(map(sql.Identifier, columns)),
+                        sql.SQL(", ").join(map(sql.Placeholder, columns))),
+                {**cleaned, "created_on": on})
+            added += cur.rowcount
+    return added, len(rows) - added
+
+
 # ---- budgets ----------------------------------------------------------------
 
 def budgets(month: date) -> pd.DataFrame:
