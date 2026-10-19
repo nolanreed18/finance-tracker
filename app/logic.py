@@ -6,6 +6,7 @@ Money is Decimal throughout, never float.
 """
 
 import re
+from dataclasses import dataclass
 from datetime import date, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -31,6 +32,51 @@ def blank(value) -> bool:
 def value(x):
     """x, or None when blank -- for handing DataFrame cells back to Python."""
     return None if blank(x) else x
+
+
+# ---- needs attention --------------------------------------------------------
+
+@dataclass(frozen=True)
+class Attention:
+    kind: str            # overdue, due, over, close, stale
+    headline: str        # "Rent"
+    detail: str          # "$1,200.00 · 2 days overdue"
+    page: str            # the page that fixes it, e.g. "pages/4_Bills.py"
+    on: date             # for ordering within a kind
+
+
+ORDER = {"overdue": 0, "due": 1, "over": 2, "close": 3, "stale": 4}
+
+
+def needs_attention(bills: pd.DataFrame, budgets: pd.DataFrame, accounts: pd.DataFrame,
+                    today: date) -> list[Attention]:
+    """What to do next, most urgent first: active bills overdue or due within
+    the lookahead, this month's budget categories over or close to their
+    amount, and open accounts whose balance is stale."""
+    items: list[Attention] = []
+    for row in bills.itertuples(index=False):
+        if not row.active:
+            continue
+        state = bill_state(row.next_due_on, today)
+        if state is not None:
+            items.append(Attention(state, row.name,
+                                   f"{money(row.amount)} · {due_text(row.next_due_on, today)}",
+                                   "pages/4_Bills.py", row.next_due_on))
+    for row in budgets.itertuples(index=False):
+        state = budget_state(row.budgeted, row.spent)
+        if state in ("over", "close"):
+            spent, budgeted = to_money(row.spent), to_money(row.budgeted)
+            detail = (f"{money(spent)} of {money(budgeted)} · "
+                      + (f"{money(spent - budgeted)} over" if state == "over"
+                         else f"{money(budgeted - spent)} left"))
+            items.append(Attention(state, row.name, detail, "pages/3_Budgets.py", today))
+    for row in accounts.itertuples(index=False):
+        if not blank(row.closed_on) or not stale_balance(row.balance_on, today):
+            continue
+        age = balance_age(row.balance_on, today)
+        items.append(Attention("stale", row.name, age[0].upper() + age[1:],
+                               "pages/5_Net_worth.py", value(row.balance_on) or date.min))
+    return sorted(items, key=lambda i: (ORDER[i.kind], i.on, i.headline))
 
 
 # ---- months -----------------------------------------------------------------

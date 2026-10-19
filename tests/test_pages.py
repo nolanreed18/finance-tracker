@@ -110,6 +110,29 @@ def test_home_says_what_it_will_show_while_empty():
     assert at.title[0].value == "Finance Tracker"
     assert opened(at) and "Nothing to show yet" in html(at)
     assert "Wednesday, October 14" in html(at)
+    assert [m.value for m in at.metric] == ["$0.00", "$0.00", "—"]
+
+
+def test_home_shows_the_headline_numbers_and_what_needs_attention():
+    seed()
+    at = run(HOME)
+    assert [(m.label, m.value) for m in at.metric] == [
+        ("Net worth", "$819.75"), ("Spent of $100.00 budget", "$52.09"), ("Savings rate", "98%")]
+    lines = [m.value for m in at.markdown if "**" in m.value]
+    assert lines == [
+        ":red-badge[Overdue] **Rent**  \n\\$1,200.00 · 2 days overdue",
+        ":orange-badge[Due] **Phone**  \n\\$45.50 · due Tue Oct 20",
+        ":yellow-badge[Update balance] **Visa**  \nUpdated Aug 1",
+    ]
+    assert sorted(b.label for b in at.button if b.label != "Open") == [
+        "Add balances", "Add transaction", "Sign out"]
+
+
+def test_home_is_quiet_when_nothing_needs_attention():
+    checking = data.add_account("Checking", "checking")
+    data.save_balance(checking, TODAY, Decimal("10"))
+    at = run(HOME)
+    assert "Nothing needs attention" in html(at)
 
 
 @pytest.mark.parametrize("path", [HOME, *PAGES], ids=lambda p: p.stem)
