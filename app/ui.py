@@ -51,8 +51,9 @@ def setup(title: str, subtitle: str | None = None) -> None:
 # ---- the look ---------------------------------------------------------------
 
 def appearance() -> None:
-    """Apply the saved look (light unless Dark mode was switched on), draw the
-    sidebar's Dark mode switch and sign-out, and add the stylesheet.
+    """Apply the saved look (dark, DESIGN.md's, unless Dark mode was switched
+    off), draw the sidebar's Dark mode switch and sign-out, and add the
+    stylesheet.
 
     Streamlit reads its theme options as a script run starts, so a change
     made during a run shows on the next one: after a switch, or when this

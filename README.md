@@ -67,11 +67,14 @@ warning, the 30-day balance reminder, the account types) are in
 tab signs you out (Streamlit forgets the visit). Sign in with Google (below)
 keeps you signed in for 30 days on each device.
 
-**Look and feel.** The app opens in a light look; the **Dark mode** switch in
-the sidebar (tap ≫ at the top left on a phone) flips it, and the choice is
-saved in the database, so every device follows. Both looks are defined in
-`app/theme.py`; `.streamlit/config.toml` carries the light look so the first
-paint already matches.
+**Look and feel.** The app follows the Dark Desk style guide
+([`DESIGN.md`](DESIGN.md)): a dark navy workspace for reading numbers, with
+small uppercase labels, every number in a monospace face, and one blue-to-cyan
+gradient that means "selected". The **Dark mode** switch in the sidebar (tap
+≫ at the top left on a phone) turns it off for a light companion look; the
+choice is saved in the database, so every device follows. Both looks are
+defined in `app/theme.py`; `.streamlit/config.toml` carries the dark look so
+the first paint already matches.
 
 ## First-time setup (once)
 
