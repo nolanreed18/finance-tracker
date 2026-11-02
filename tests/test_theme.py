@@ -1,5 +1,6 @@
-"""The look: two complete palettes, the light one being what config.toml
-draws first, applied through Streamlit's theme options."""
+"""The look: two complete palettes, the dark one (Dark Desk, DESIGN.md) being
+the default and what config.toml draws first, applied through Streamlit's
+theme options."""
 
 import tomllib
 from pathlib import Path
@@ -13,9 +14,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
-def back_to_light():
+def back_to_default():
     yield
-    theme.apply(theme.LIGHT)
+    theme.apply(theme.DEFAULT)
 
 
 def flat(section: dict, prefix: str = "") -> dict:
@@ -28,19 +29,20 @@ def flat(section: dict, prefix: str = "") -> dict:
     return out
 
 
-def test_both_modes_set_the_same_options_and_light_is_the_default():
+def test_both_modes_set_the_same_options_and_dark_is_the_default():
     light, dark = theme.options(theme.LIGHT), theme.options(theme.DARK)
     assert set(light) == set(dark)
     assert (light["base"], dark["base"]) == ("light", "dark")
-    assert theme.DEFAULT == theme.LIGHT
+    assert theme.DEFAULT == theme.DARK
+    assert dark["backgroundColor"] == "#0b0f19" and dark["linkColor"] == theme.CYAN
     with pytest.raises(ValueError):
         theme.options("sepia")
 
 
-def test_config_toml_draws_the_light_look_first():
+def test_config_toml_draws_the_dark_look_first():
     with open(ROOT / ".streamlit" / "config.toml", "rb") as handle:
         configured = flat(tomllib.load(handle)["theme"])
-    assert configured == theme.options(theme.LIGHT)
+    assert configured == theme.options(theme.DARK)
 
 
 def test_apply_switches_the_process_theme():
@@ -58,10 +60,21 @@ def test_apply_switches_the_process_theme():
 def test_the_stylesheet_carries_its_mode_tokens():
     light, dark = theme.stylesheet(theme.LIGHT), theme.stylesheet(theme.DARK)
     assert light.startswith("<style>") and light.endswith("</style>")
-    assert "--ct-card: #ffffff;" in light and "--ct-card: #111827;" in dark
+    assert "--ct-card: #ffffff;" in light and "--ct-card: rgba(18, 25, 41, 0.75);" in dark
+    assert "color-scheme: dark;" in dark and "color-scheme: light;" in light
     assert "st-key-card-" in light and "stRadioOption" in light
+    assert "stSidebarNavLink" in dark and "prefers-reduced-motion" in dark
     assert "stBaseButton-primaryFormSubmit" in light     # form Save/Add buttons too
     assert "stSidebar" in theme.LOCKED
+
+
+def test_the_stylesheet_takes_its_colours_from_the_tokens():
+    """DESIGN.md: only the tokens are used; no new hex values invented inline.
+    The gradient, its glow and plain white for text on it are the exceptions
+    the guide itself defines."""
+    import re
+    body = theme.stylesheet(theme.DARK).split(":root", 1)[1].split("}", 1)[1]
+    assert re.findall(r"#[0-9a-fA-F]{3,6}\b", body) == ["#fff"]
 
 
 def test_html_helpers_escape_text():

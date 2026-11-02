@@ -30,10 +30,14 @@ clicking merge).
   budget month is the first day of the month (`logic.month_start`).
 - **All SQL lives in `app/data.py`**; calculations in `app/logic.py` (pure: no
   database, no Streamlit). Pages only lay out and call those two.
-- **The look lives in `app/theme.py`**: a light palette (the default) and a dark
-  one as Streamlit theme options, applied per run by `ui.setup()` from the
-  `settings` table ("theme"), plus one stylesheet. `.streamlit/config.toml`
-  must equal the light palette (`tests/test_theme.py` checks). Pages use
+- **All UI follows `DESIGN.md`** (Dark Desk), adapted to Streamlit as its
+  preface says. **The look lives in `app/theme.py`**: the dark palette (the
+  default) and its light companion as Streamlit theme options, applied per
+  run by `ui.setup()` from the `settings` table ("theme"), plus one
+  stylesheet that uses only the tokens (no inline hex in pages or
+  stylesheet additions). `.streamlit/config.toml` must equal the dark
+  palette (`tests/test_theme.py` checks). Every number is mono and tabular;
+  missing is `—`, never 0; mark the exception, never the normal case. Pages use
   `ui.card()`, `ui.empty()` and the badge helpers rather than emoji or raw
   HTML; colour means something (blue = in progress, green = good, orange =
   attention, red = overdue or bad, grey = neutral, yellow = unverified, such

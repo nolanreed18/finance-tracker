@@ -154,29 +154,30 @@ def test_the_right_password_opens_the_app_and_a_wrong_one_does_not(monkeypatch):
     assert opened(at)
 
 
-def test_dark_mode_is_a_saved_choice_and_light_is_the_default():
+def test_dark_is_the_default_and_light_is_a_saved_choice():
     at = run(HOME)
-    assert theme.current() == "light" and data.get_setting("theme") is None
-    widget(at.toggle, "Dark mode").set_value(True).run()
-    assert not at.exception
-    assert data.get_setting("theme") == "dark" and theme.current() == "dark"
-    for path in PAGES:                                    # every page follows
-        assert run(path).toggle[0].value is True
+    assert theme.current() == "dark" and data.get_setting("theme") is None
+    assert widget(at.toggle, "Dark mode").value is True
     widget(at.toggle, "Dark mode").set_value(False).run()
+    assert not at.exception
     assert data.get_setting("theme") == "light" and theme.current() == "light"
+    for path in PAGES:                                    # every page follows
+        assert run(path).toggle[0].value is False
+    widget(at.toggle, "Dark mode").set_value(True).run()
+    assert data.get_setting("theme") == "dark" and theme.current() == "dark"
 
 
 def test_the_switch_follows_a_change_made_on_another_device():
     at = run(HOME)
-    assert widget(at.toggle, "Dark mode").value is False
-    data.set_setting("theme", "dark")                 # flipped on the phone, say
+    assert widget(at.toggle, "Dark mode").value is True
+    data.set_setting("theme", "light")                # flipped on the phone, say
     at.run()
     assert not at.exception
-    assert widget(at.toggle, "Dark mode").value is True
-    assert data.get_setting("theme") == "dark" and theme.current() == "dark"
-    data.set_setting("theme", "light")
+    assert widget(at.toggle, "Dark mode").value is False
+    assert data.get_setting("theme") == "light" and theme.current() == "light"
+    data.set_setting("theme", "dark")
     at.run()
-    assert widget(at.toggle, "Dark mode").value is False and theme.current() == "light"
+    assert widget(at.toggle, "Dark mode").value is True and theme.current() == "dark"
 
 
 def test_signing_out_locks_the_app_again():

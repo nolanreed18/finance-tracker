@@ -1,21 +1,12 @@
-# The light look, as app/theme.py defines it (tests/test_theme.py checks they
-# match): what the page is drawn with before the app applies the saved choice.
+# The dark look, Dark Desk (DESIGN.md), as app/theme.py defines it
+# (tests/test_theme.py checks they match): what the page is drawn with before
+# the app applies the saved choice.
 [theme]
-base = "light"
-primaryColor = "#2563eb"
-backgroundColor = "#f8fafc"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#0f172a"
-linkColor = "#0e7490"
-borderColor = "#e2e8f0"
-codeBackgroundColor = "#f1f5f9"
-dataframeBorderColor = "#e2e8f0"
-dataframeHeaderBackgroundColor = "#f1f5f9"
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
 headingFont = "Inter"
 codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
 baseFontSize = 15
-headingFontSizes = ["1.5rem", "1.2rem", "1.05rem", "1rem", "0.9rem", "0.85rem"]
+headingFontSizes = ["1.2rem", "1.05rem", "0.72rem", "0.95rem", "0.9rem", "0.85rem"]
 headingFontWeights = [700, 700, 700, 700, 600, 600]
 baseRadius = "10px"
 buttonRadius = "6px"
@@ -27,11 +18,21 @@ greenColor = "#10b981"
 orangeColor = "#f59e0b"
 redColor = "#f43f5e"
 grayColor = "#64748b"
-violetColor = "#8b5cf6"
+base = "dark"
+primaryColor = "#3b82f6"
+backgroundColor = "#0b0f19"
+secondaryBackgroundColor = "#101725"
+textColor = "#f8fafc"
+linkColor = "#06b6d4"
+borderColor = "#1f222b"
+codeBackgroundColor = "#0f172a"
+dataframeBorderColor = "#1f222b"
+dataframeHeaderBackgroundColor = "#0f172a"
+violetColor = "#c084fc"
 
 [theme.sidebar]
-backgroundColor = "#f1f5f9"
-secondaryBackgroundColor = "#ffffff"
+backgroundColor = "#0d121e"
+secondaryBackgroundColor = "#101725"
 
 [browser]
 gatherUsageStats = false
