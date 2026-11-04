@@ -98,7 +98,12 @@ clicking merge).
 - Page tests use `streamlit.testing.v1.AppTest` against that database with
   `data.today` patched; every page gets a draws-empty and a draws-with-data
   test (`tests/test_pages.py` runs both for every file in `app/pages/`).
-- Work on a branch and open a pull request; `main` is what's live.
+- Work on a branch and open a pull request; `main` is what's live. The owner
+  has given standing approval to merge your own PR once its check is green.
+- **Leave nothing behind in the owner's scheduled tasks.** Don't create
+  check-in or reminder tasks to watch a PR: GitHub's events (CI finished,
+  merged) wake the session on their own. If a scheduled task is ever truly
+  needed, delete it (not just disable it) as soon as its job is done.
 
 ## Plan
 Pages, in sidebar order: Home, Accounts, Transactions, Budgets, Bills, Net
