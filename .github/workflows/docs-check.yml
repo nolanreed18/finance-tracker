@@ -1,0 +1,61 @@
+# The docs check: every app keeps five notes (CLAUDE.md and four in docs/),
+# and every pull request that changes the app updates docs/STATUS.md and
+# docs/HISTORY.md. A pull request that only touches docs/, *.md files or
+# .github/ passes without them; so does one with the label `no-docs`
+# (for a tooling-only change).
+name: Docs check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the five notes exist and this change updates the docs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          NO_DOCS: ${{ contains(github.event.pull_request.labels.*.name, 'no-docs') }}
+        run: |
+          missing=0
+          for f in CLAUDE.md docs/OVERVIEW.md docs/STATUS.md docs/DECISIONS.md docs/HISTORY.md; do
+            if [ ! -f "$f" ]; then
+              echo "::error::$f is missing. Every app keeps CLAUDE.md, docs/OVERVIEW.md, docs/STATUS.md, docs/DECISIONS.md and docs/HISTORY.md (see CLAUDE.md)."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+          if [ "$NO_DOCS" = "true" ]; then
+            echo "Label no-docs: skipping the STATUS/HISTORY check."
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          echo "Changed files:"; echo "$changed"
+
+          app_changed=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              docs/*|.github/*|*.md) ;;
+              *) app_changed=1 ;;
+            esac
+          done <<< "$changed"
+
+          if [ "$app_changed" -eq 1 ]; then
+            if ! grep -qx 'docs/STATUS.md' <<< "$changed" || ! grep -qx 'docs/HISTORY.md' <<< "$changed"; then
+              echo "::error::Update docs/STATUS.md and docs/HISTORY.md for this change (see CLAUDE.md), or add the label no-docs for a tooling-only change."
+              exit 1
+            fi
+          fi
+          echo "Docs check passed."
