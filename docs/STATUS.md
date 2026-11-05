@@ -25,9 +25,11 @@ Checked against the GitHub Actions run logs on Nov 4, 2026, not guessed.
   only because there was nothing to ping about. The ntfy and Gmail secrets
   are empty, so no ping or email can be sent. The one Monday run so far
   (Nov 2) failed: "GMAIL_ADDRESS and GMAIL_APP_PASSWORD are not both set".
-- **Backup** (Sundays): **works now**. `BACKUP_PASSWORD` was set on Nov 4 and
-  a manual run succeeded that night (first good run). The three earlier
-  Sunday runs (Oct 19, Oct 25, Nov 1) had failed for want of it.
+- **Backup** (Sundays, 11:00 UTC): **works now**. `BACKUP_PASSWORD` was set
+  on Nov 4 and a manual run succeeded that night (first success, Nov 4). The
+  three earlier Sunday runs (Oct 19, Oct 25, Nov 1) had failed for want of
+  it. Next scheduled run: Sunday Nov 8, 11:00 UTC. Nothing for the owner to
+  do here.
 - **Tests** and the **docs check** run on every pull request and pass.
 
 ## In progress

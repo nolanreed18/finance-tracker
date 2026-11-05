@@ -2,6 +2,8 @@
 
 Newest first. Dates are America/Chicago.
 
+- **2026-11-05**: Backup is off the owner's to-do list (it works since
+  Nov 4); STATUS now gives the next scheduled run, Sunday Nov 8, 11:00 UTC.
 - **2026-11-05**: Needs the owner: open every page of the live app and make
   a test account (the unfinished launch checks 5–8).
 - **2026-11-05**: Handoff notes written down: the live-app checks stopped
