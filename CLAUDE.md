@@ -114,10 +114,13 @@ Read these first; the repository is the memory, chats are replaceable.
   test (`tests/test_pages.py` runs both for every file in `app/pages/`).
 - Work on a branch and open a pull request; `main` is what's live. The owner
   has given standing approval to merge your own PR once its check is green.
+- **After opening a pull request, check its status yourself** (its checks,
+  then merge when green). GitHub's "check finished" notice sometimes never
+  reaches a session (PR #18 sat open a day waiting for one).
 - **Leave nothing behind in the owner's scheduled tasks.** Don't create
   check-in or reminder tasks to watch a PR: GitHub's events (CI finished,
-  merged) wake the session on their own. If a scheduled task is ever truly
-  needed, delete it (not just disable it) as soon as its job is done.
+  merged) usually wake the session, and when one doesn't, check by hand
+  (above). If a scheduled task is ever truly needed, delete it (not just disable it) as soon as its job is done.
 
 ## Plan
 What's next, and what's done, is in `docs/STATUS.md`.

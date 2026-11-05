@@ -2,6 +2,11 @@
 
 Newest first. Dates are America/Chicago.
 
+- **2026-11-05**: Handoff notes written down: the live-app checks stopped
+  at check 4 (Known issues); copying Dark Desk into the app template is
+  open (Next); CLAUDE.md now says to check a pull request's status yourself,
+  since GitHub's "check finished" notice can fail to arrive.
+
 - **2026-11-04**: Backups now work: `BACKUP_PASSWORD` is set and a manual
   Backup run succeeded (first good run). STATUS updated.
 - **2026-11-04**: STATUS checked against the Actions run logs: backups have
