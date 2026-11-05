@@ -9,7 +9,21 @@ GitHub and coding: explain in plain language, do the work yourself, and end
 with a short numbered list of anything only they can do (accounts, secrets,
 clicking merge).
 
+## The notes
+Read these first; the repository is the memory, chats are replaceable.
+- `docs/OVERVIEW.md`: what the app is, how it's built, where things live.
+- `docs/STATUS.md`: what's live, in progress, next, needs the owner, known
+  issues (replace it on each update; don't append).
+- `docs/DECISIONS.md`: each rule as it stands, why, and its history.
+- `docs/HISTORY.md`: dated log of changes, newest first, with PR numbers.
+- How the owner likes to work: `Standards/Working with me.md` in
+  github.com/nolanreed18/mothership. Secrets are named, never written down;
+  where they live: that repository's `Studio/Secrets.md`.
+
 ## Rules
+- **Every pull request that changes the app updates `docs/STATUS.md` and
+  `docs/HISTORY.md`** (`.github/workflows/docs-check.yml` fails otherwise;
+  label `no-docs` only for a tooling-only change).
 - `.env` holds `DATABASE_URL`. **Never read, print or copy it**; use `db.py`.
   A build session never uses a real database: a `DATABASE_URL` in a cloud
   environment belongs to some other app, so leave it alone and tell the owner.
@@ -106,7 +120,4 @@ clicking merge).
   needed, delete it (not just disable it) as soon as its job is done.
 
 ## Plan
-Pages, in sidebar order: Home, Accounts, Transactions, Budgets, Bills, Net
-worth, Goals, Stats, Import, one pull request each. Later, not now: a monthly
-review email built by code, a scheduled Claude task that categorises imported
-transactions, and a year-in-review page.
+What's next, and what's done, is in `docs/STATUS.md`.
