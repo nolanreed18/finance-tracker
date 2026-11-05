@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-04
-state: The app and its pages are live, but the bank feed, phone ping, Monday email and backups are not switched on yet (their GitHub secrets are empty).
+state: The app and its pages are live and backups now work (first good run Nov 4), but the bank feed, phone ping and Monday email are not switched on yet (their GitHub secrets are empty).
 ---
 
 # Status
@@ -25,9 +25,9 @@ Checked against the GitHub Actions run logs on Nov 4, 2026, not guessed.
   only because there was nothing to ping about. The ntfy and Gmail secrets
   are empty, so no ping or email can be sent. The one Monday run so far
   (Nov 2) failed: "GMAIL_ADDRESS and GMAIL_APP_PASSWORD are not both set".
-- **Backup** (Sundays): **has never worked**. All three runs (Oct 19, Oct 25,
-  Nov 1) failed at the first step because `BACKUP_PASSWORD` isn't set, so
-  there is no backup of the data.
+- **Backup** (Sundays): **works now**. `BACKUP_PASSWORD` was set on Nov 4 and
+  a manual run succeeded that night (first good run). The three earlier
+  Sunday runs (Oct 19, Oct 25, Nov 1) had failed for want of it.
 - **Tests** and the **docs check** run on every pull request and pass.
 
 ## In progress
@@ -50,13 +50,13 @@ Repository secrets are added at GitHub → this repository → Settings →
 Secrets and variables → Actions. Where each value lives: the mothership's
 `Studio/Secrets.md`.
 
-1. **Turn on backups (most urgent):** add `BACKUP_PASSWORD`, then Actions →
-   Backup → Run workflow and check it goes green.
-2. **Turn on the Monday email:** add `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`,
-   on the **studio Gmail**, not the personal one. Nothing has been sent from
-   any address yet, so it can start on the studio account.
-3. **Turn on the phone ping:** add `NTFY_TOPIC`.
-4. **Turn on the bank feed** if still wanted: add `PLAID_CLIENT_ID` and
+1. **Turn on the Monday email:** add `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`,
+   on the **studio Gmail**, not the personal one. This waits for the studio
+   Gmail's two-step verification (Google app passwords need it; due Nov 11).
+   Nothing has been sent from any address yet, so it can start on the studio
+   account.
+2. **Turn on the phone ping:** add `NTFY_TOPIC`.
+3. **Turn on the bank feed** if still wanted: add `PLAID_CLIENT_ID` and
    `PLAID_SECRET` as repository secrets and in the app's Streamlit secrets,
    then link each bank on the Accounts page.
 
