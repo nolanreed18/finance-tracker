@@ -2,6 +2,8 @@
 
 Newest first. Dates are America/Chicago.
 
+- **2026-11-04**: Backups now work: `BACKUP_PASSWORD` is set and a manual
+  Backup run succeeded (first good run). STATUS updated.
 - **2026-11-04**: STATUS checked against the Actions run logs: backups have
   never run (no `BACKUP_PASSWORD`), and the bank sync, phone ping and Monday
   email are not switched on (their secrets are empty), though the sync and
