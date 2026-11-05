@@ -65,6 +65,9 @@ Secrets and variables → Actions. Where each value lives: the mothership's
 3. **Turn on the bank feed** if still wanted: add `PLAID_CLIENT_ID` and
    `PLAID_SECRET` as repository secrets and in the app's Streamlit secrets,
    then link each bank on the Accounts page.
+4. **Open every page of the live app once and make a test account** (checks
+   5–8 of the Nov launch list were never run). A build session can't sign
+   in to the live app; sign-ins are yours.
 
 ## Known issues
 

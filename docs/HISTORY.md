@@ -2,6 +2,8 @@
 
 Newest first. Dates are America/Chicago.
 
+- **2026-11-05**: Needs the owner: open every page of the live app and make
+  a test account (the unfinished launch checks 5–8).
 - **2026-11-05**: Handoff notes written down: the live-app checks stopped
   at check 4 (Known issues); copying Dark Desk into the app template is
   open (Next); CLAUDE.md now says to check a pull request's status yourself,
