@@ -1,5 +1,5 @@
 ---
-updated: 2026-11-04
+updated: 2026-11-05
 state: The app and its pages are live and backups now work (first good run Nov 4), but the bank feed, phone ping and Monday email are not switched on yet (their GitHub secrets are empty).
 ---
 
@@ -44,6 +44,12 @@ The "later" list from the original plan, none started:
   HTTPS endpoint).
 - A year-in-review page.
 
+Also open:
+
+- **Copy the dark look ("Dark Desk") into the studio's app template**
+  (`nolanreed18/app-template`), so new apps start with it. Offered, not
+  started: nothing done yet.
+
 ## Needs the owner
 
 Repository secrets are added at GitHub → this repository → Settings →
@@ -71,6 +77,10 @@ Secrets and variables → Actions. Where each value lives: the mothership's
   has held so far.
 - Not checked from here: the deployed app itself and its Streamlit secrets
   (sign-in, Plaid). No access to the live app.
+- **The live app has never been fully checked.** The live-app checks
+  stopped partway through check 4 (reloading a page signs you out of a
+  password sign-in); checks 5–8 were never run. So nobody has yet opened
+  every page on the live app or made a test account there.
 - Signing in with the password doesn't survive a page reload; Google
   sign-in keeps you in for 30 days.
 - Payoff interest runs slightly low once a card isn't paid in full (issuers
