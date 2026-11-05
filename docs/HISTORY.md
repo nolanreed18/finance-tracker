@@ -2,6 +2,10 @@
 
 Newest first. Dates are America/Chicago.
 
+- **2026-11-04**: STATUS checked against the Actions run logs: backups have
+  never run (no `BACKUP_PASSWORD`), and the bank sync, phone ping and Monday
+  email are not switched on (their secrets are empty), though the sync and
+  notify runs show green. Needs the owner now lists the secrets to add.
 - **2026-11-04**: The standard app docs (`docs/OVERVIEW.md`, `STATUS.md`,
   `DECISIONS.md`, `HISTORY.md`) and a check that every pull request
   changing the app updates STATUS and HISTORY. The "Plan" in CLAUDE.md
