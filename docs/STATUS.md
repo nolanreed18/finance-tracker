@@ -1,25 +1,38 @@
 ---
 updated: 2026-11-04
-state: All nine planned pages, the Plaid bank feed, notifications and the Dark Desk look are merged; adding the standard app docs.
+state: The app and its pages are live, but the bank feed, phone ping, Monday email and backups are not switched on yet (their GitHub secrets are empty).
 ---
 
 # Status
 
+Checked against the GitHub Actions run logs on Nov 4, 2026, not guessed.
+
 ## Live
 
 - What's on `main` deploys to Streamlit Community Cloud at the address in
-  `app/config.py` (`APP_URL`). Latest change merged: PR #18 (Nov 3, 2026),
-  after PR #17, the Dark Desk look (Nov 1, 2026). The app has no version
-  numbers; the latest merged pull request is the version.
+  `app/config.py` (`APP_URL`). Latest change merged: PR #19, the standard
+  docs (Nov 4, 2026). The app has no version numbers; the latest merged pull
+  request is the version.
 - All nine pages: Home, Accounts (with Payoff and Connected banks),
   Transactions, Budgets, Bills, Net worth, Goals, Stats, Import.
-- Scheduled on GitHub Actions: bank sync (daily), notify (daily ping, Monday
-  email), backup (Sundays). Tests run on every pull request.
+- The database secret is set for GitHub Actions, and the daily jobs reach the
+  database.
+- **Bank sync** (daily): runs green (last green: Nov 4, 2026), but every run
+  says "no banks linked yet": the Plaid secrets are empty, so no bank is
+  connected and nothing is synced. Transactions come in only by Import or
+  by hand.
+- **Notify** (daily): runs green on most days (last green: Nov 4, 2026), but
+  only because there was nothing to ping about. The ntfy and Gmail secrets
+  are empty, so no ping or email can be sent. The one Monday run so far
+  (Nov 2) failed: "GMAIL_ADDRESS and GMAIL_APP_PASSWORD are not both set".
+- **Backup** (Sundays): **has never worked**. All three runs (Oct 19, Oct 25,
+  Nov 1) failed at the first step because `BACKUP_PASSWORD` isn't set, so
+  there is no backup of the data.
+- **Tests** and the **docs check** run on every pull request and pass.
 
 ## In progress
 
-- This change: the five standard docs (`docs/`) and a check that every pull
-  request changing the app updates `docs/STATUS.md` and `docs/HISTORY.md`.
+Nothing.
 
 ## Next
 
@@ -33,26 +46,32 @@ The "later" list from the original plan, none started:
 
 ## Needs the owner
 
-- Check that the secrets each feature needs are set (names in the README;
-  where they live: the mothership's `Studio/Secrets.md`): the database and
-  sign-in in Streamlit, and the GitHub repository secrets for backup, bank
-  sync and notifications. Until they're set, those jobs show red or do
-  nothing.
-- Link banks on the Accounts page once Plaid is set up.
-- Decide which Google account sends the Monday email (see Known issues).
+Repository secrets are added at GitHub → this repository → Settings →
+Secrets and variables → Actions. Where each value lives: the mothership's
+`Studio/Secrets.md`.
+
+1. **Turn on backups (most urgent):** add `BACKUP_PASSWORD`, then Actions →
+   Backup → Run workflow and check it goes green.
+2. **Turn on the Monday email:** add `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`,
+   on the **studio Gmail**, not the personal one. Nothing has been sent from
+   any address yet, so it can start on the studio account.
+3. **Turn on the phone ping:** add `NTFY_TOPIC`.
+4. **Turn on the bank feed** if still wanted: add `PLAID_CLIENT_ID` and
+   `PLAID_SECRET` as repository secrets and in the app's Streamlit secrets,
+   then link each bank on the Accounts page.
 
 ## Known issues
 
-- **Which Gmail sends the weekly email isn't visible from the code.** It is
-  whatever account the `GMAIL_ADDRESS` secret names. If that's still the
-  owner's personal Gmail, it's due to move to the studio Gmail: change the
-  `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` secrets.
-- Not checked from here: whether the deployed app, the Plaid connection and
-  the scheduled jobs are currently running green (no access to the live
-  app, Actions run history or secrets from this repository's code).
+- The studio's notes say the bank sync and alerts have been live for a
+  while; the run logs say otherwise (see Live). The green ticks hide that,
+  because a missing Plaid or ntfy secret doesn't make the run fail.
+- Scheduled runs start hours late: the bank sync is set for 11:30 UTC and
+  notify for 12:00 UTC, but recent runs started between about 16:00 and 21:30 UTC.
+  GitHub delays scheduled jobs on busy days; the order (sync before notify)
+  has held so far.
+- Not checked from here: the deployed app itself and its Streamlit secrets
+  (sign-in, Plaid). No access to the live app.
 - Signing in with the password doesn't survive a page reload; Google
   sign-in keeps you in for 30 days.
 - Payoff interest runs slightly low once a card isn't paid in full (issuers
   then also charge interest on new purchases); the page says so.
-- Schedules are set in UTC, so the jobs run an hour earlier by the clock in
-  winter (CST) than in summer.
