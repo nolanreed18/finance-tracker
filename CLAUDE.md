@@ -124,3 +124,6 @@ Read these first; the repository is the memory, chats are replaceable.
 
 ## Plan
 What's next, and what's done, is in `docs/STATUS.md`.
+
+# Compact instructions
+When this chat compacts, keep: every job in flight (what it is, its branch and pull request number, who runs it); the last deploy line; everything waiting on the owner and his answers so far; the owner's rules given in this chat that are not yet in CLAUDE.md or DECISIONS.md; the current batch's list of changes. Drop tool output, file contents and finished threads.
